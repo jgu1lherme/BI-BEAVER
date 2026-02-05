@@ -668,6 +668,7 @@ def calcular_status(realizado, metas, mes_referencia, feriados):
 
 
 def comparar_com_metas(planilha_metas, mes_referencia, total_opd, total_amc):
+    # 1. Mapeamento dos meses (exatamente como você tinha)
     meses = [
         "jan",
         "fev",
@@ -682,35 +683,65 @@ def comparar_com_metas(planilha_metas, mes_referencia, total_opd, total_amc):
         "nov",
         "dez",
     ]
+
+    # Prevenção: Garante que o índice do mês seja válido
+    if not (1 <= mes_referencia <= 12):
+        return {}
+
     mes_coluna = meses[mes_referencia - 1]
 
     try:
-        meta_opd = float(
-            planilha_metas.loc[
-                planilha_metas["Categoria"] == "META AN OPD", mes_coluna
-            ].values[0]
-        )
-        meta_desaf_opd = float(
-            planilha_metas.loc[
-                planilha_metas["Categoria"] == "META DESAF OPD", mes_coluna
-            ].values[0]
-        )
-        meta_distri = float(
-            planilha_metas.loc[
-                planilha_metas["Categoria"] == "META AN DISTRI", mes_coluna
-            ].values[0]
-        )
-        meta_desaf_distri = float(
-            planilha_metas.loc[
-                planilha_metas["Categoria"] == "META DESAF DISTRI", mes_coluna
-            ].values[0]
-        )
-        super_meta_distri = float(
-            planilha_metas.loc[
-                planilha_metas["Categoria"] == "SUPER META DISTRI", mes_coluna
-            ].values[0]
-        )
+        # 2. Limpeza de segurança: Remove espaços extras dos nomes das colunas e das categorias
+        # Isso evita que "jan " (com espaço) seja diferente de "jan"
+        planilha_metas.columns = [
+            str(c).strip().lower() for c in planilha_metas.columns
+        ]
+        mes_coluna = mes_coluna.strip().lower()
 
+        if "categoria" in planilha_metas.columns:
+            planilha_metas["categoria"] = (
+                planilha_metas["categoria"].astype(str).str.strip()
+            )
+        else:
+            # Se a primeira coluna não se chamar 'Categoria', tentamos renomear a primeira
+            planilha_metas.rename(
+                columns={planilha_metas.columns[0]: "categoria"}, inplace=True
+            )
+
+        # 3. Função interna para buscar valores sem travar o código
+        def buscar_v(nome_categoria):
+            try:
+                # Busca a linha onde a categoria bate (ignorando maiúsculas/minúsculas)
+                filtro = planilha_metas[
+                    planilha_metas["categoria"].str.upper() == nome_categoria.upper()
+                ]
+
+                if filtro.empty or mes_coluna not in planilha_metas.columns:
+                    return 0.0
+
+                valor = filtro[mes_coluna].values[0]
+
+                # Se o valor for uma string (ex: "1.500,00"), limpa para virar número
+                if isinstance(valor, str):
+                    valor = (
+                        valor.replace("R$", "")
+                        .replace(".", "")
+                        .replace(",", ".")
+                        .strip()
+                    )
+
+                return float(valor) if pd.notnull(valor) and valor != "" else 0.0
+            except:
+                return 0.0
+
+        # 4. Busca os valores usando a proteção
+        meta_opd = buscar_v("META AN OPD")
+        meta_desaf_opd = buscar_v("META DESAF OPD")
+        meta_distri = buscar_v("META AN DISTRI")
+        meta_desaf_distri = buscar_v("META DESAF DISTRI")
+        super_meta_distri = buscar_v("SUPER META DISTRI")
+
+        # 5. Retorna o dicionário no formato que o seu código espera
         return {
             "OPD": {
                 "Realizado": total_opd,
@@ -724,10 +755,9 @@ def comparar_com_metas(planilha_metas, mes_referencia, total_opd, total_amc):
                 "Super Meta": super_meta_distri,
             },
         }
-    except (IndexError, KeyError) as e:
-        st.error(
-            f"❌ Erro ao ler metas para o mês '{mes_coluna}' na aba selecionada. Verifique a planilha. Detalhe: {e}"
-        )
+
+    except Exception as e:
+        st.error(f"❌ Erro ao processar metas: {e}")
         return {}
 
 
