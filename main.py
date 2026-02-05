@@ -35,7 +35,7 @@ def carregar_planilha_metas_sheets(nome_aba):
 
 
 # @st.cache_data(ttl=600)  # Cache de 10 minutos para não travar o app
-# @st.cache_data(ttl=60) # Para 1 minuto: 
+@st.cache_data(ttl=60) # Para 1 minuto: 
 # @st.cache_data(ttl=1800) # Para 30 minutos: 
 def carregar_dados_do_sheets():
     # Carrega Vendas
