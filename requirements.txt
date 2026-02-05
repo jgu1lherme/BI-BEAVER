@@ -21,6 +21,7 @@ Flask
 Flask-Login
 Flask-SQLAlchemy
 SQLAlchemy
+st-gsheets-connection
 
 # Utilitários
 requests
