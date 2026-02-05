@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 
 # Configurar a página para sempre ser exibida em widescreen
 st.set_page_config(
-    page_title="BI - Nova Alternativa", page_icon="assets/logo.png", layout="wide"
+    page_title="BI - Beaver ERP", page_icon="assets/logo.png", layout="wide"
 )
 
 # ================== PALETA DE CORES ==================
