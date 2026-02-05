@@ -1,0 +1,30 @@
+# Bibliotecas essenciais
+streamlit>=1.25
+pandas>=2.0
+numpy>=1.25
+plotly>=5.0
+altair>=5.0
+pydeck
+
+# Leitura de arquivos e PDF
+openpyxl
+pdfplumber
+PyPDF2
+pdf2image
+python-docx
+docx2pdf
+pillow
+PyMuPDF
+
+# Web e banco de dados (se usados)
+Flask
+Flask-Login
+Flask-SQLAlchemy
+SQLAlchemy
+
+# Utilitários
+requests
+watchdog
+tqdm
+typing_extensions
+Prophet
