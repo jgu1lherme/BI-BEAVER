@@ -489,7 +489,7 @@ def carregar_dados_financeiros(df_receber_raw, df_pagar_raw):
     # Converte datas
     for col in ["Data Emissao", "Data Vencimento", "Data_Baixa"]:
         if col in df_receber.columns:
-            df_receber[col] = pd.to_datetime(df_receber[col], errors="coerce")
+            df_receber[col] = pd.to_datetime(df_receber[col], dayfirst=True, errors="coerce")
 
     df_receber["Valor"] = pd.to_numeric(df_receber["Valor"], errors="coerce").fillna(0)
 
@@ -509,7 +509,7 @@ def carregar_dados_financeiros(df_receber_raw, df_pagar_raw):
     # --- Padroniza as colunas de 'Contas a Pagar' ---
     for col in ["Data Emissao", "Data Vencimento", "Data_Baixa"]:
         if col in df_pagar.columns:
-            df_pagar[col] = pd.to_datetime(df_pagar[col], errors="coerce")
+            pd.to_datetime(df_pagar[col], dayfirst=True, errors="coerce")
 
     df_pagar["Valor"] = pd.to_numeric(df_pagar["Valor"], errors="coerce").fillna(0)
 
@@ -551,7 +551,8 @@ def filtrar_vendas(
 
     # --- INÍCIO DO TRATAMENTO (Igual ao que você já tinha) ---
     # Garantir que DAT_CAD seja datetime
-    df_vendas["DAT_CAD"] = pd.to_datetime(df_vendas["DAT_CAD"], errors="coerce")
+    df_vendas["DAT_CAD"] = pd.to_datetime(df_vendas["DAT_CAD"], dayfirst=True, errors="coerce")
+
 
     # Remover espaços em branco das colunas de texto
     cols_texto = ["VEN_NOME", "CLI_RAZ", "PED_OBS_INT", "PED_TIPO"]
