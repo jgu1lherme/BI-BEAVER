@@ -14,6 +14,50 @@ st.set_page_config(
     page_title="BI - Nova Alternativa", page_icon="assets/logo.png", layout="wide"
 )
 
+# ================== PALETA DE CORES ==================
+CORES = {
+    "primary": "#240eb3",
+    "bg": "#e5e5e5",
+    "surface": "#ffffff",
+    "success": "#2e7d32",
+    "danger": "#c62828",
+    "warning": "#ed6c02",
+    "info": "#3949ab",
+    "text": "#1f1f1f",
+    "muted": "#777777",
+}
+
+st.markdown(
+    """
+<style>
+/* Fundo geral */
+.stApp {
+    background-color: #e5e5e5;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background-color: #ffffff;
+    border-right: 1px solid #dddddd;
+}
+
+/* Títulos */
+h1, h2, h3, h4 {
+    color: #240eb3;
+}
+
+/* Cards padrão */
+.card {
+    background-color: #ffffff;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 # --- FUNÇÕES EXISTENTES (Com pequenas adaptações) ---
 
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -35,8 +79,8 @@ def carregar_planilha_metas_sheets(nome_aba):
 
 
 # @st.cache_data(ttl=600)  # Cache de 10 minutos para não travar o app
-# @st.cache_data(ttl=60) # Para 1 minuto: 
-# @st.cache_data(ttl=1800) # Para 30 minutos: 
+# @st.cache_data(ttl=60) # Para 1 minuto:
+# @st.cache_data(ttl=1800) # Para 30 minutos:
 def carregar_dados_do_sheets():
     # Carrega Vendas
     df_vendas = conn.read(spreadsheet=URL_PLANILHA, worksheet="Vendas")
@@ -195,7 +239,7 @@ def criar_painel_financeiro_avancado(
     st.markdown(
         f"""
         <div style="
-            background-color: #161616; padding: 15px; border-radius: 10px;
+            background-color: #240eb3; padding: 15px; border-radius: 10px;
             text-align: center; margin-top: 10px; margin-bottom: 20px;
         ">
             <h3 style="color: #ffffff; margin: 0;">{titulo}</h3>
@@ -245,10 +289,10 @@ def criar_painel_financeiro_avancado(
         status_grafico_pago = "Pago"
 
     # --- 4. MONTAGEM E EXIBIÇÃO DOS KPIs ---
-    bloco_saldo = f"""<div style="background-color: #f35202; padding: 13px; border-radius: 10px; text-align: center; flex: 1; min-width: 150px;"><h4 style="color: #ffffff; margin: 3px; font-weight: 400;">{label_saldo}</h4><p style="color: #ffffff; font-size: 1.6rem; margin: 0; font-weight: 700;">R$ {valor_em_aberto_total:,.2f}</p></div>"""
-    bloco_atrasado = f"""<div style="background-color: #dc3545; padding: 13px; border-radius: 10px; text-align: center; flex: 1; min-width: 150px;"><h4 style="color: #ffffff; margin: 3px; font-weight: 400;">{label_atrasado}</h4><p style="color: #ffffff; font-size: 1.6rem; margin: 0; font-weight: 700;">R$ {valor_atrasado:,.2f}</p></div>"""
-    bloco_a_vencer = f"""<div style="background-color: #313334; padding: 13px; border-radius: 10px; text-align: center; flex: 1; min-width: 150px;"><h4 style="color: #ffffff; margin: 3px; font-weight: 400;">{label_a_vencer}</h4><p style="color: #ffffff; font-size: 1.6rem; margin: 0; font-weight: 700;">R$ {valor_a_vencer:,.2f}</p></div>"""
-    bloco_pago = f"""<div style="background-color: #28a745; padding: 13px; border-radius: 10px; text-align: center; flex: 1; min-width: 150px;"><h4 style="color: #ffffff; margin: 3px; font-weight: 400;">{label_pago}</h4><p style="color: #ffffff; font-size: 1.6rem; margin: 0; font-weight: 700;">R$ {valor_pago:,.2f}</p></div>"""
+    bloco_saldo = f"""<div style="background-color: #240eb3; padding: 13px; border-radius: 10px; text-align: center; flex: 1; min-width: 150px;"><h4 style="color: #ffffff; margin: 3px; font-weight: 400;">{label_saldo}</h4><p style="color: #ffffff; font-size: 1.6rem; margin: 0; font-weight: 700;">R$ {valor_em_aberto_total:,.2f}</p></div>"""
+    bloco_atrasado = f"""<div style="background-color: #c62828; padding: 13px; border-radius: 10px; text-align: center; flex: 1; min-width: 150px;"><h4 style="color: #ffffff; margin: 3px; font-weight: 400;">{label_atrasado}</h4><p style="color: #ffffff; font-size: 1.6rem; margin: 0; font-weight: 700;">R$ {valor_atrasado:,.2f}</p></div>"""
+    bloco_a_vencer = f"""<div style="background-color: #ed6c02; padding: 13px; border-radius: 10px; text-align: center; flex: 1; min-width: 150px;"><h4 style="color: #ffffff; margin: 3px; font-weight: 400;">{label_a_vencer}</h4><p style="color: #ffffff; font-size: 1.6rem; margin: 0; font-weight: 700;">R$ {valor_a_vencer:,.2f}</p></div>"""
+    bloco_pago = f"""<div style="background-color: #2e7d32; padding: 13px; border-radius: 10px; text-align: center; flex: 1; min-width: 150px;"><h4 style="color: #ffffff; margin: 3px; font-weight: 400;">{label_pago}</h4><p style="color: #ffffff; font-size: 1.6rem; margin: 0; font-weight: 700;">R$ {valor_pago:,.2f}</p></div>"""
 
     st.markdown(
         f"""<div style="display: flex; gap: 10px; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap;">{bloco_saldo}{bloco_atrasado}{bloco_a_vencer}{bloco_pago}</div>""",
@@ -272,9 +316,9 @@ def criar_painel_financeiro_avancado(
         hole=0.4,
         color="Status_Grafico",
         color_discrete_map={
-            status_grafico_pago: "#28a745",
-            "Atrasado": "#dc3545",
-            "A Vencer": "#313334",
+            status_grafico_pago: CORES["success"],
+            "Atrasado": CORES["danger"],
+            "A Vencer": CORES["warning"],
         },
     )
 
@@ -313,7 +357,7 @@ def criar_painel_financeiro_avancado(
                 text_auto=True,
                 hover_data={"nome_limpo": True, coluna_valor: ":.2f"},
             )
-            fig_top5.update_traces(marker_color="#f35202", texttemplate="R$ %{x:,.2f}")
+            fig_top5.update_traces(marker_color="#240eb3", texttemplate="R$ %{x:,.2f}")
             fig_top5.update_layout(
                 height=400,
                 yaxis_title=None,
@@ -343,7 +387,9 @@ def criar_painel_financeiro_avancado(
             nome_opcoes = df_filtrado["Fornecedor"].dropna().unique().tolist()
             nome_escolhido = st.multiselect("Filtrar por fornecedor", nome_opcoes)
             if nome_escolhido:
-                df_filtrado = df_filtrado[df_filtrado["Fornecedor"].isin(nome_escolhido)]
+                df_filtrado = df_filtrado[
+                    df_filtrado["Fornecedor"].isin(nome_escolhido)
+                ]
 
             # --- Ordenação ---
             colunas_ordenar = ["Valor", "Fornecedor", "Data Emissao", "Data_Vencimento"]
@@ -371,7 +417,7 @@ def criar_painel_financeiro_avancado(
         st.markdown(f"##### 🚨 Análise de Inadimplência")
 
         df_inadimplentes = df_filtrado[
-            df_filtrado[coluna_inadimplencia] == "Inadimplente"
+            df_filtrado[coluna_inadimplencia] == "INADIMPLENTE"
         ].copy()
 
         if not df_inadimplentes.empty:
@@ -416,7 +462,7 @@ def criar_painel_financeiro_avancado(
                 height=400,
             )
             fig_top_inadimplencia.update_traces(
-                marker_color="#f35202",  # Vermelho de alerta
+                marker_color="#240eb3",  # Vermelho de alerta
                 texttemplate="R$ %{x:,.2f}",
             )
             fig_top_inadimplencia.update_layout(
@@ -475,25 +521,22 @@ def criar_painel_financeiro_avancado(
             )
 
 
-def carregar_dados_financeiros(df_receber_raw, df_pagar_raw):
-    """
-    Processa os DataFrames 'Receber' e 'Pagar' vindos do Sheets.
-    """
-    if df_receber_raw is None or df_pagar_raw is None:
+def carregar_dados_financeiros(df_receber, df_pagar):
+    if df_receber is None or df_pagar is None:
         return None, None
 
-    df_receber = df_receber_raw.copy()
-    df_pagar = df_pagar_raw.copy()
+    df_receber = df_receber.copy()
+    df_pagar = df_pagar.copy()
 
-    # --- Padroniza as colunas de 'Contas a Receber' ---
-    # Converte datas
+    # --- CONTAS A RECEBER ---
     for col in ["Data Emissao", "Data Vencimento", "Data_Baixa"]:
         if col in df_receber.columns:
-            df_receber[col] = pd.to_datetime(df_receber[col], dayfirst=True, errors="coerce")
+            df_receber[col] = pd.to_datetime(
+                df_receber[col], dayfirst=True, errors="coerce"
+            )
 
     df_receber["Valor"] = pd.to_numeric(df_receber["Valor"], errors="coerce").fillna(0)
 
-    # Tratamento de Strings
     if "Cliente" in df_receber.columns:
         df_receber["Cliente"] = df_receber["Cliente"].astype(str).str.strip()
     if "Status" in df_receber.columns:
@@ -506,10 +549,12 @@ def carregar_dados_financeiros(df_receber_raw, df_pagar_raw):
     else:
         df_receber["Inadimplência"] = "N/A"
 
-    # --- Padroniza as colunas de 'Contas a Pagar' ---
+    # --- CONTAS A PAGAR ---
     for col in ["Data Emissao", "Data Vencimento", "Data_Baixa"]:
         if col in df_pagar.columns:
-            pd.to_datetime(df_pagar[col], dayfirst=True, errors="coerce")
+            df_pagar[col] = pd.to_datetime(
+                df_pagar[col], dayfirst=True, errors="coerce"
+            )
 
     df_pagar["Valor"] = pd.to_numeric(df_pagar["Valor"], errors="coerce").fillna(0)
 
@@ -551,8 +596,9 @@ def filtrar_vendas(
 
     # --- INÍCIO DO TRATAMENTO (Igual ao que você já tinha) ---
     # Garantir que DAT_CAD seja datetime
-    df_vendas["DAT_CAD"] = pd.to_datetime(df_vendas["DAT_CAD"], dayfirst=True, errors="coerce")
-
+    df_vendas["DAT_CAD"] = pd.to_datetime(
+        df_vendas["DAT_CAD"], dayfirst=True, errors="coerce"
+    )
 
     # Remover espaços em branco das colunas de texto
     cols_texto = ["VEN_NOME", "CLI_RAZ", "PED_OBS_INT", "PED_TIPO"]
@@ -771,7 +817,7 @@ def gerar_grafico(categoria, dados, titulo):
         x="Tipo",
         y="Valor",
         color="Tipo",
-        color_discrete_sequence=["#313334", "#f35202", "#e93900", "#e02500"],
+        color_discrete_sequence=["#313334 ", "#240eb3", "#5c6bc0 ", "#9fa8da "],
         title=titulo,
         text_auto=True,  # Mostra valores nas barras
     )
@@ -1048,7 +1094,8 @@ def gerar_dados_ranking(df_vendas_filtrado):
 try:
     with st.spinner("Carregando dados do BI BEAVER..."):
         # Chama a função que busca tudo do Sheets de uma vez
-        vendas_raw, receber_raw, pagar_raw, feriados_raw = carregar_dados_do_sheets()
+        vendas_raw, df_receber, df_pagar, feriados_raw = carregar_dados_do_sheets()
+        df_receber, df_pagar = carregar_dados_financeiros(df_receber, df_pagar)
 
         # Processa a lista de feriados
         feriados_list = carregar_feriados(feriados_raw)
@@ -1351,7 +1398,7 @@ else:
                         )
 
                         html = (
-                            f"<div style='background-color:#161616; padding:10px; border-radius:10px; width:33%; text-align:center; margin-bottom:10px;'>"
+                            f"<div style='background-color:#180785; padding:10px; border-radius:10px; width:33%; text-align:center; margin-bottom:10px;'>"
                             f"<h4 style='color:#ffffff;'>{titulo}: {format_valor(meta_valor)}</h4>"
                             f"<p style='color:#cccccc; margin:4px;'>📈 Tendência: {format_valor(tendencia)}</p>"
                             f"<p style='color:#cccccc; margin:4px;'>📊 Média Diária Realizada: {format_valor(media_diaria)}</p>"
@@ -1365,7 +1412,7 @@ else:
                     bloco_super = gerar_bloco_meta("Super Meta", super_meta)
 
                     st.markdown(
-                        f"<div style='background-color:#161616; padding:20px; border-radius:10px; text-align:center; margin-top:10px; margin-bottom:10px;'><h3 style='color:#ffffff;'>💰 Total Geral da Empresa: {format_valor(soma_total)}</h3></div>",
+                        f"<div style='background-color:#240eb3; padding:20px; border-radius:10px; text-align:center; margin-top:10px; margin-bottom:10px;'><h3 style='color:#ffffff;'>💰 Total Geral da Empresa: {format_valor(soma_total)}</h3></div>",
                         unsafe_allow_html=True,
                     )
                     st.markdown(
@@ -1376,7 +1423,7 @@ else:
                 col1_chart, col2_chart = st.columns(2)
                 with col1_chart:
                     st.markdown(
-                        f"<div style='background-color:#f35202; padding:10px; border-radius:10px; text-align:center;'><h4 style='color:#ffff;'>📈 Vendas OPD: R$ {total_opd:,.2f}</h4></div>",
+                        f"<div style='background-color:#240eb3; padding:10px; border-radius:10px; text-align:center;'><h4 style='color:#ffff;'>📈 Vendas OPD: R$ {total_opd:,.2f}</h4></div>",
                         unsafe_allow_html=True,
                     )
                     if "OPD" in comparacao and comparacao["OPD"]:
@@ -1388,7 +1435,7 @@ else:
                         st.info("Dados de OPD não disponíveis para o gráfico.")
                 with col2_chart:
                     st.markdown(
-                        f"<div style='background-color:#f35202; padding:10px; border-radius:10px; text-align:center;'><h4 style='color:#ffff;'>📊 Vendas Distribuição: R$ {total_amc:,.2f}</h4></div>",
+                        f"<div style='background-color:#240eb3; padding:10px; border-radius:10px; text-align:center;'><h4 style='color:#ffff;'>📊 Vendas Distribuição: R$ {total_amc:,.2f}</h4></div>",
                         unsafe_allow_html=True,
                     )
                     if "AMC" in comparacao and comparacao["AMC"]:
@@ -1457,7 +1504,7 @@ else:
                                 )
                                 texto_rodape = f"Projeção de ultrapassar a meta em {sinal}{format_valor(abs(diferenca_tendencia_meta))}."
                             else:
-                                cor_borda = "#dc3545"  # Vermelho
+                                cor_borda = "#ff1500"  # Vermelho
                                 sinal = "-"
                                 texto_status = (
                                     f"📉 Risco de não atingir <u>{nome_meta}</u>"
@@ -1465,14 +1512,14 @@ else:
                                 texto_rodape = f"Projeção de ficar abaixo da meta em {sinal}{format_valor(abs(diferenca_tendencia_meta))}."
 
                             texto_html = f"""
-                            <div style="background-color:#161616; padding:16px; border-radius:12px; margin-bottom:15px;
+                            <div style="background-color:#ffffff; padding:16px; border-radius:12px; margin-bottom:15px;
                                         box-shadow:0 2px 6px rgba(0,0,0,0.1); border-left:6px solid {cor_borda};">
                                 <div style="font-size:16px; font-weight:bold;">{texto_status}</div>
                                 <div style="font-size:22px; font-weight:bold; color:{cor_borda}; margin-top:6px;">
                                     {sinal}{format_valor(abs(diferenca_tendencia_meta))} ({sinal}{abs(percentual_tendencia):.1f}%)
                                 </div>
-                                <div style="font-size:14px; color:#cccccc;">{texto_rodape}</div>
-                                <div style="font-size:14px; color:#cccccc; margin-top:5px;">
+                                <div style="font-size:14px; color:#313334;">{texto_rodape}</div>
+                                <div style="font-size:14px; color:#313334; margin-top:5px;">
                                     <i>Tendência Total: {format_valor(tendencia)} | Média Diária Realizada: {format_valor(media_diaria)}</i>
                                 </div>
                             </div>
@@ -1552,7 +1599,11 @@ else:
                                             by=tipo_rank, ascending=False
                                         )
                                         df_top3 = df_sorted.head(3).copy()
-                                        cores = ["#e02500", "#e93900", "#f35202"]
+                                        cores = [
+                                            "#240eb3",
+                                            "#5c6bc0",
+                                            "#9fa8da ",
+                                        ]  # e02500C
                                         df_top3["Cor"] = cores[: len(df_top3)]
 
                                         fig = px.bar(
@@ -1630,9 +1681,9 @@ else:
                             title="Distribuição de Clientes por Classe ABC",
                             color="Classe",
                             color_discrete_map={
-                                "A": "#e02500",
-                                "B": "#f35202",
-                                "C": "#313334",
+                                "A": "#240eb3",
+                                "B": "#5c6bc0 ",
+                                "C": "#9fa8da",
                             },
                         )
                         st.plotly_chart(fig_abc, use_container_width=True)
@@ -1838,9 +1889,9 @@ else:
         # NÃO carregamos arquivo local. Usamos os dados que já vieram do Sheets no início do script.
         # vendas_raw, receber_raw, pagar_raw foram carregados na linha 763
 
-        if receber_raw is not None and pagar_raw is not None:
+        if df_receber is not None and df_pagar is not None:
             # Processa os dados brutos do Sheets
-            df_receber, df_pagar = carregar_dados_financeiros(receber_raw, pagar_raw)
+            df_receber, df_pagar = carregar_dados_financeiros(df_receber, df_pagar)
         else:
             st.error("Dados financeiros não encontrados no Google Sheets.")
             st.stop()
@@ -2074,7 +2125,7 @@ else:
                             y=df_fluxo["Fluxo_Líquido_Previsto"],
                             name="Fluxo Líquido Previsto",
                             marker_color=[
-                                "#c0392b" if v < 0 else "#2ecc71"
+                                "#c0392b" if v < 0 else "#0f13ff"
                                 for v in df_fluxo["Fluxo_Líquido_Previsto"]
                             ],
                         ),
@@ -2103,7 +2154,7 @@ else:
                             y=df_fluxo["Fluxo_Líquido_Realizado"],
                             name="Fluxo Líquido Realizado",
                             marker_color=[
-                                "#5dade2" if v < 0 else "#3498db"
+                                "#9597eb" if v < 0 else "#6263c7"
                                 for v in df_fluxo["Fluxo_Líquido_Realizado"]
                             ],
                         ),
@@ -2255,7 +2306,7 @@ else:
                                 height=400,
                             )
                             fig_despesas.update_traces(
-                                marker_color="#ff4500", texttemplate="R$ %{x:,.2f}"
+                                marker_color="#240eb3", texttemplate="R$ %{x:,.2f}"
                             )
                             fig_despesas.update_layout(
                                 xaxis_title="Valor a Pagar (R$)",
