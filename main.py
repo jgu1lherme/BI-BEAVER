@@ -340,13 +340,13 @@ def criar_painel_financeiro_avancado(
             df_filtrado = df_filtrado[df_filtrado["Status"].isin(status_escolhido)]
 
             # --- Filtro por fornecedor ---
-            nome_opcoes = df_filtrado["FOR_RAZ"].dropna().unique().tolist()
+            nome_opcoes = df_filtrado["Fornecedor"].dropna().unique().tolist()
             nome_escolhido = st.multiselect("Filtrar por fornecedor", nome_opcoes)
             if nome_escolhido:
-                df_filtrado = df_filtrado[df_filtrado["FOR_RAZ"].isin(nome_escolhido)]
+                df_filtrado = df_filtrado[df_filtrado["Fornecedor"].isin(nome_escolhido)]
 
             # --- Ordenação ---
-            colunas_ordenar = ["Valor", "FOR_RAZ", "Data Emissao", "Data_Vencimento"]
+            colunas_ordenar = ["Valor", "Fornecedor", "Data Emissao", "Data_Vencimento"]
             ordenar_por = st.selectbox("Ordenar por", colunas_ordenar)
             crescente = st.checkbox("Ordem crescente", value=True)
             df_filtrado = df_filtrado.sort_values(by=ordenar_por, ascending=crescente)
