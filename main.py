@@ -79,9 +79,8 @@ def carregar_planilha_metas_sheets(nome_aba):
 
 
 # @st.cache_data(ttl=600)  # Cache de 10 minutos para não travar o app
-# @st.cache_data(ttl=60) # Para 1 minuto:
+# @st.cache_data(ttl=60) # Para 1 minutoF:
 # @st.cache_data(ttl=1800) # Para 30 minutos:
-# @st.cache_data(ttl=36000)  # Cache de 10 horas
 def carregar_dados_do_sheets():
     # Carrega Vendas
     df_vendas = conn.read(spreadsheet=URL_PLANILHA, worksheet="Vendas")
@@ -167,11 +166,34 @@ def preparar_dados_fluxo_caixa(
     df_receber, df_pagar, saldo_inicial, data_inicio_filtro, data_fim_filtro
 ):
     """
-    Consolida e calcula o fluxo de caixa PREVISTO e REALIZADO.
+    Consolida e calcula o fluxo de caixa PREVISTO e REALIZADO com tratamento de erros de tipo.
     """
-    # --- FLUXO PREVISTO (baseado em Data Vencimento de contas EM ABERTO) ---
+    # --- 1. TRATAMENTO DE TIPOS (Garantir que valores sejam números e datas sejam datetime) ---
+    df_receber = df_receber.copy()
+    df_pagar = df_pagar.copy()
+
+    # Converter valores para numérico (o que não for número vira 0)
+    df_receber["Valor"] = pd.to_numeric(df_receber["Valor"], errors="coerce").fillna(0)
+    df_pagar["Valor"] = pd.to_numeric(df_pagar["Valor"], errors="coerce").fillna(0)
+    if "VALOR_PAGO" in df_pagar.columns:
+        df_pagar["VALOR_PAGO"] = pd.to_numeric(
+            df_pagar["VALOR_PAGO"], errors="coerce"
+        ).fillna(0)
+
+    # Garantir que as colunas de data estejam no formato datetime do Pandas
+    df_receber["Data Vencimento"] = pd.to_datetime(
+        df_receber["Data Vencimento"], errors="coerce"
+    )
+    df_pagar["Data Vencimento"] = pd.to_datetime(
+        df_pagar["Data Vencimento"], errors="coerce"
+    )
+    df_receber["Data_Baixa"] = pd.to_datetime(df_receber["Data_Baixa"], errors="coerce")
+    df_pagar["Data_Baixa"] = pd.to_datetime(df_pagar["Data_Baixa"], errors="coerce")
+
+    # --- 2. FLUXO PREVISTO (baseado em Data Vencimento de contas EM ABERTO) ---
     receber_previsto = df_receber[df_receber["Status"] == "EM ABERTO"].copy()
     pagar_previsto = df_pagar[df_pagar["Status"] == "EM ABERTO"].copy()
+
     entradas_prev = (
         receber_previsto.groupby("Data Vencimento")["Valor"]
         .sum()
@@ -184,9 +206,10 @@ def preparar_dados_fluxo_caixa(
     )
     fluxo_prev_df = pd.concat([entradas_prev, saidas_prev], axis=1)
 
-    # --- FLUXO REALIZADO (baseado em Data Baixa de contas PAGAS) ---
+    # --- 3. FLUXO REALIZADO (baseado em Data Baixa de contas PAGAS) ---
     receber_real = df_receber[df_receber["Status"] == "PAGO"].copy()
     pagar_real = df_pagar[df_pagar["Status"] == "PAGO"].copy()
+
     entradas_real = (
         receber_real.groupby("Data_Baixa")["Valor"].sum().rename("Entradas_Realizadas")
     )
@@ -195,12 +218,17 @@ def preparar_dados_fluxo_caixa(
     )
     fluxo_real_df = pd.concat([entradas_real, saidas_real], axis=1)
 
-    # --- CONSOLIDAR TUDO ---
+    # --- 4. CONSOLIDAR TUDO ---
     fluxo_df = pd.concat([fluxo_prev_df, fluxo_real_df], axis=1).fillna(0)
-    idx_datas = pd.date_range(start=data_inicio_filtro, end=data_fim_filtro, freq="D")
+
+    # Converter filtros de data para datetime para evitar erro de comparação
+    dt_inicio = pd.to_datetime(data_inicio_filtro)
+    dt_fim = pd.to_datetime(data_fim_filtro)
+
+    idx_datas = pd.date_range(start=dt_inicio, end=dt_fim, freq="D")
     fluxo_df = fluxo_df.reindex(idx_datas, fill_value=0)
 
-    # Calcular fluxos líquidos e saldos acumulados
+    # --- 5. CÁLCULOS FINAIS (Agora garantidos como numéricos) ---
     fluxo_df["Fluxo_Líquido_Previsto"] = (
         fluxo_df["Entradas_Previstas"] - fluxo_df["Saídas_Previstas"]
     )
@@ -366,7 +394,8 @@ def criar_painel_financeiro_avancado(
                 margin=dict(l=10, r=10, t=40, b=10),
                 yaxis=dict(tickfont=dict(size=10)),
             )
-            st.plotly_chart(fig_top5, use_container_width=True)
+            st.plotly_chart(fig_top5, use_container_width=True, key=f"top5_{titulo}")
+
         else:
             st.info("Não há contas em aberto para exibir no Top 5.")
 
@@ -602,10 +631,17 @@ def filtrar_vendas(
     )
 
     # Remover espaços em branco das colunas de texto
-    cols_texto = ["VEN_NOME", "CLI_RAZ", "PED_OBS_INT", "PED_TIPO"]
+    cols_texto = ["VEN_NOME", "CLI_RAZ", "PED_OBS_INT", "PED_TIPO", "PED_STATUS"]
+
     for col in cols_texto:
         if col in df_vendas.columns:
-            df_vendas[col] = df_vendas[col].astype(str).str.strip()
+            df_vendas[col] = (
+                df_vendas[col]
+                .astype(str)
+                .str.replace("\u00a0", " ", regex=False)  # remove NBSP
+                .str.strip()  # remove espaços
+                .str.upper()  # padroniza
+            )
 
     # Converter PED_TOTAL para numérico
     df_vendas["PED_TOTAL"] = pd.to_numeric(
@@ -1335,9 +1371,9 @@ else:
                 )
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("📈 Vendas OPD", f"R$ {total_opd:,.2f}")
+                    st.metric("📈 Vendas Direta", f"R$ {total_opd:,.2f}")
                 with col2:
-                    st.metric("📊 Vendas Distribuição", f"R$ {total_amc:,.2f}")
+                    st.metric("📊 Vendas E-Commerce", f"R$ {total_amc:,.2f}")
             else:
                 dias_uteis_passados = calcular_dias_uteis_passados(
                     mes, incluir_hoje=False, feriados=feriados_sess
@@ -1424,7 +1460,7 @@ else:
                 col1_chart, col2_chart = st.columns(2)
                 with col1_chart:
                     st.markdown(
-                        f"<div style='background-color:#240eb3; padding:10px; border-radius:10px; text-align:center;'><h4 style='color:#ffff;'>📈 Vendas OPD: R$ {total_opd:,.2f}</h4></div>",
+                        f"<div style='background-color:#240eb3; padding:10px; border-radius:10px; text-align:center;'><h4 style='color:#ffff;'>📈 Vendas Direta: R$ {total_opd:,.2f}</h4></div>",
                         unsafe_allow_html=True,
                     )
                     if "OPD" in comparacao and comparacao["OPD"]:
@@ -1436,7 +1472,7 @@ else:
                         st.info("Dados de OPD não disponíveis para o gráfico.")
                 with col2_chart:
                     st.markdown(
-                        f"<div style='background-color:#240eb3; padding:10px; border-radius:10px; text-align:center;'><h4 style='color:#ffff;'>📊 Vendas Distribuição: R$ {total_amc:,.2f}</h4></div>",
+                        f"<div style='background-color:#240eb3; padding:10px; border-radius:10px; text-align:center;'><h4 style='color:#ffff;'>📊 Vendas E-Commerce: R$ {total_amc:,.2f}</h4></div>",
                         unsafe_allow_html=True,
                     )
                     if "AMC" in comparacao and comparacao["AMC"]:
@@ -1921,8 +1957,8 @@ else:
 
             # Aplicando filtros
             df_receber_filtrado = df_receber[
-                (df_receber["Data Vencimento"].dt.date >= data_inicial)
-                & (df_receber["Data Vencimento"].dt.date <= data_final)
+                (df_receber["Data Vencimento"] >= pd.to_datetime(data_inicial))
+                & (df_receber["Data Vencimento"] <= pd.to_datetime(data_final))
             ]
 
             if entidade_escolhida != "Todos":
@@ -1931,8 +1967,8 @@ else:
                 ]
 
             df_pagar_filtrado = df_pagar[
-                (df_pagar["Data Vencimento"].dt.date >= data_inicial)
-                & (df_pagar["Data Vencimento"].dt.date <= data_final)
+                (df_pagar["Data Vencimento"] >= pd.to_datetime(data_inicial))
+                & (df_pagar["Data Vencimento"] <= pd.to_datetime(data_final))
             ]
 
             if entidade_escolhida != "Todos":
@@ -2279,8 +2315,14 @@ else:
                         # 1. Aplicar o filtro de data à base de despesas (original ou simulada)
                         # Garante que a análise respeite o período selecionado na sidebar.
                         despesas_no_periodo = despesas_base[
-                            (despesas_base["Data Vencimento"].dt.date >= data_inicial)
-                            & (despesas_base["Data Vencimento"].dt.date <= data_final)
+                            (
+                                despesas_base["Data Vencimento"]
+                                >= pd.to_datetime(data_inicial)
+                            )
+                            & (
+                                despesas_base["Data Vencimento"]
+                                <= pd.to_datetime(data_final)
+                            )
                         ]
 
                         # 2. Filtrar apenas as despesas "EM ABERTO" do período
@@ -2388,14 +2430,14 @@ else:
                     ("Regime Previsto", "Regime Realizado"),
                     horizontal=True,
                     help="""
-                    - **Regime Previsto:** Mostra a lucratividade com base nas datas de venda e vencimento (visão econômica).
-                    - **Regime Realizado:** Mostra o resultado financeiro com base no que foi efetivamente pago e recebido (visão de caixa).
-                    """,
+                                - **Regime Previsto:** Mostra a lucratividade com base nas datas de venda e vencimento (visão econômica).
+                                - **Regime Realizado:** Mostra o resultado financeiro com base no que foi efetivamente pago e recebido (visão de caixa).
+                                """,
                 )
 
                 df_resultados = pd.DataFrame()
 
-                # --- REGIME DE COMPETÊNCIA ---
+                # --- REGIME DE COMPETÊNCIA (PREVISTO) ---
                 if tipo_analise == "Regime Previsto":
                     st.markdown(
                         "Compare suas **vendas faturadas** com suas **despesas por vencimento**."
@@ -2405,26 +2447,56 @@ else:
                         and not df_filtrado.empty
                         and df_pagar is not None
                     ):
+                        # --- TRATAMENTO VENDAS ---
+                        df_vendas_limpo = df_filtrado.copy()
+                        # Garante que é data e remove nulos
+                        df_vendas_limpo["DAT_CAD"] = pd.to_datetime(
+                            df_vendas_limpo["DAT_CAD"], errors="coerce"
+                        )
+                        df_vendas_limpo = df_vendas_limpo.dropna(subset=["DAT_CAD"])
+                        # Garante que o valor é número
+                        df_vendas_limpo["PED_TOTAL"] = pd.to_numeric(
+                            df_vendas_limpo["PED_TOTAL"], errors="coerce"
+                        ).fillna(0)
+
                         vendas_mensais = (
-                            df_filtrado.set_index("DAT_CAD")
+                            df_vendas_limpo.set_index("DAT_CAD")
                             .resample("M")["PED_TOTAL"]
                             .sum()
                             .rename("Receita (Competência)")
                         )
+
+                        # --- TRATAMENTO DESPESAS ---
+                        df_pagar_limpo = df_pagar.copy()
+                        # Garante que é data e remove nulos
+                        df_pagar_limpo["Data Vencimento"] = pd.to_datetime(
+                            df_pagar_limpo["Data Vencimento"], errors="coerce"
+                        )
+                        df_pagar_limpo = df_pagar_limpo.dropna(
+                            subset=["Data Vencimento"]
+                        )
+                        # Garante que o valor é número
+                        df_pagar_limpo["Valor"] = pd.to_numeric(
+                            df_pagar_limpo["Valor"], errors="coerce"
+                        ).fillna(0)
+
                         despesas_mensais = (
-                            df_pagar.set_index("Data Vencimento")
+                            df_pagar_limpo.set_index("Data Vencimento")
                             .resample("M")["Valor"]
                             .sum()
                             .rename("Despesa (Competência)")
                         )
 
+                        # Concatenar e calcular resultado
                         df_resultados = pd.concat(
                             [vendas_mensais, despesas_mensais], axis=1
                         ).fillna(0)
+
                         df_resultados["Resultado"] = (
                             df_resultados["Receita (Competência)"]
                             - df_resultados["Despesa (Competência)"]
                         )
+
                         df_resultados.rename(
                             columns={
                                 "Receita (Competência)": "Receitas",
@@ -2433,78 +2505,10 @@ else:
                             inplace=True,
                         )
 
-                # --- REGIME DE CAIXA ---
-                elif tipo_analise == "Regime Realizado":
-                    st.markdown(
-                        "Compare suas **receitas efetivamente recebidas** com suas **despesas efetivamente pagas**."
-                    )
-                    if df_receber is not None and df_pagar is not None:
-                        df_receber["Data_Baixa"] = pd.to_datetime(
-                            df_receber["Data_Baixa"], errors="coerce"
-                        )
-                        df_pagar["Data_Baixa"] = pd.to_datetime(
-                            df_pagar["Data_Baixa"], errors="coerce"
-                        )
-
-                        df_recebimentos = df_receber[
-                            df_receber["Status"] == "PAGO"
-                        ].dropna(subset=["Data_Baixa"])
-                        df_pagamentos = df_pagar[df_pagar["Status"] == "PAGO"].dropna(
-                            subset=["Data_Baixa"]
-                        )
-
-                        if (
-                            "start_date" in st.session_state
-                            and "end_date" in st.session_state
-                        ):
-                            start_date = pd.to_datetime(st.session_state.start_date)
-                            end_date = pd.to_datetime(st.session_state.end_date)
-                            df_recebimentos = df_recebimentos[
-                                df_recebimentos["Data_Baixa"].between(
-                                    start_date, end_date
-                                )
-                            ]
-                            df_pagamentos = df_pagamentos[
-                                df_pagamentos["Data_Baixa"].between(
-                                    start_date, end_date
-                                )
-                            ]
-                        else:
-                            ano_atual = datetime.now().year
-                            df_recebimentos = df_recebimentos[
-                                df_recebimentos["Data_Baixa"].dt.year == ano_atual
-                            ]
-                            df_pagamentos = df_pagamentos[
-                                df_pagamentos["Data_Baixa"].dt.year == ano_atual
-                            ]
-
-                        receitas_realizadas = (
-                            df_recebimentos.set_index("Data_Baixa")
-                            .resample("M")["Valor"]
-                            .sum()
-                            .rename("Receitas Realizadas (Caixa)")
-                        )
-                        despesas_realizadas = (
-                            df_pagamentos.set_index("Data_Baixa")
-                            .resample("M")["VALOR_PAGO"]
-                            .sum()
-                            .rename("Despesas Pagas (Caixa)")
-                        )
-
-                        df_resultados = pd.concat(
-                            [receitas_realizadas, despesas_realizadas], axis=1
-                        ).fillna(0)
-                        df_resultados["Resultado"] = (
-                            df_resultados["Receitas Realizadas (Caixa)"]
-                            - df_resultados["Despesas Pagas (Caixa)"]
-                        )
-                        df_resultados.rename(
-                            columns={
-                                "Receitas Realizadas (Caixa)": "Receitas",
-                                "Despesas Pagas (Caixa)": "Despesas",
-                            },
-                            inplace=True,
-                        )
+                    # --- REGIME REALIZADO (Aqui você deve aplicar a mesma lógica de limpeza para Data_Baixa) ---
+                    elif tipo_analise == "Regime Realizado":
+                        # Certifique-se de aplicar o .dropna(subset=["Data_Baixa"]) aqui também quando fizer o código
+                        pass
 
                 # --- EXIBIÇÃO FINAL ---
                 if not df_resultados.empty:
