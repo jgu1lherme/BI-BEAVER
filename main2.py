@@ -30,23 +30,45 @@ CORES = {
 st.markdown(
     """
 <style>
-/* Fundo geral */
+/* 1. Fundo Geral e Cabeçalho da Página */
 .stApp {
     background-color: #e5e5e5;
 }
+header[data-testid="stHeader"] {
+    display: none !important;
+}
+.block-container {
+    padding-top: 1rem !important;
+}
 
-/* Sidebar */
+/* 2. REMOVER ESPAÇO DA SIDEBAR (O segredo está aqui) */
+
+/* Esconde o cabeçalho da sidebar (onde fica o botão X) */
+[data-testid="stSidebarHeader"] {
+    display: none !important;
+}
+
+/* Zera o padding do topo da sidebar */
+[data-testid="stSidebarContent"] {
+    padding-top: 3rem !important;
+}
+
+/* Garante que o conteúdo interno suba tudo */
+[data-testid="stSidebarUserContent"] {
+    padding-top: 0rem !important;
+    margin-top: -2.5rem !important; /* Ajuste esse valor se precisar subir mais */
+}
+
+/* 3. Estilos Visuais (Sidebar e Títulos) */
 section[data-testid="stSidebar"] {
     background-color: #ffffff;
     border-right: 1px solid #dddddd;
 }
 
-/* Títulos */
 h1, h2, h3, h4 {
     color: #240eb3;
 }
 
-/* Cards padrão */
 .card {
     background-color: #ffffff;
     border-radius: 12px;
@@ -1509,7 +1531,7 @@ elif vendedor_selecionado_upper in rose_loja:
 else:
     aba_meta_calculada = "GERAL"
 
-if st.sidebar.button("🔄 Processar Dados"):
+if st.sidebar.button("🔄 Processar Dados", use_container_width=True):
     with st.spinner("🔄 Processando dados do Google Sheets..."):
 
         # 1. FILTRAR VENDAS (Passamos vendas_raw, NÃO um caminho de arquivo)
