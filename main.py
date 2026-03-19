@@ -34,9 +34,9 @@ st.markdown(
 .stApp {
     background-color: #e5e5e5;
 }
-header[data-testid="stHeader"] {
-    display: none !important;
-}
+
+
+
 .block-container {
     padding-top: 1rem !important;
 }
@@ -45,7 +45,7 @@ header[data-testid="stHeader"] {
 
 /* Esconde o cabeçalho da sidebar (onde fica o botão X) */
 [data-testid="stSidebarHeader"] {
-    display: none !important;
+    display: flex !important;
 }
 
 /* Zera o padding do topo da sidebar */
@@ -102,7 +102,7 @@ def carregar_planilha_metas_sheets(nome_aba):
 
 # @st.cache_data(ttl=600)  # Cache de 10 minutos para não travar o app
 # @st.cache_data(ttl=60) # Para 1 minutoF:
-# @st.cache_data(ttl=1800) # Para 30 minutos:
+@st.cache_data(ttl=1800)  # Para 30 minutos:
 def carregar_dados_do_sheets():
     # Carrega Vendas
     df_vendas = conn.read(spreadsheet=URL_PLANILHA, worksheet="Vendas")
@@ -1531,82 +1531,55 @@ elif vendedor_selecionado_upper in rose_loja:
 else:
     aba_meta_calculada = "GERAL"
 
-if st.sidebar.button("🔄 Processar Dados", use_container_width=True):
-    with st.spinner("🔄 Processando dados do Google Sheets..."):
+# =================================================================
+# SUBSTITUA TODO O BLOCO DO BOTÃO E O IF "df_filtrado" POR ESTE:
+# =================================================================
 
-        # 1. FILTRAR VENDAS (Passamos vendas_raw, NÃO um caminho de arquivo)
-        df_filtrado = filtrar_vendas(
-            vendas_raw,  # <--- MUDANÇA IMPORTANTE: Passa o DF do Sheets
-            mes_referencia=mes_selecionado if filtro_tipo == "Mês" else None,
-            vendedor_selecionado=vendedor_selecionado,
-            empresa_selecionada=empresa_selecionada,  # <-- ADICIONE ESTA LINHA AQUI
-            data_inicial=data_inicial,
-            data_final=data_final,
-            com_cdp=com_cdp,
+with st.spinner("🔄 Atualizando dados em tempo real..."):
+    # 1. FILTRAR VENDAS (Processamento automático)
+    df_filtrado = filtrar_vendas(
+        vendas_raw,
+        mes_referencia=mes_selecionado if filtro_tipo == "Mês" else None,
+        vendedor_selecionado=vendedor_selecionado,
+        empresa_selecionada=empresa_selecionada,
+        data_inicial=data_inicial,
+        data_final=data_final,
+        com_cdp=com_cdp,
+    )
+
+    # 2. DEFINIR ABA DE METAS
+    nome_aba_sheet = aba_meta_calculada
+    if aba_meta_calculada == "GERAL":
+        nome_aba_sheet = "Meta - Geral"
+
+    # 3. CARREGAR METAS (Cacheado para ser rápido)
+    planilha_metas = carregar_planilha_metas_sheets(nome_aba_sheet)
+
+    if planilha_metas.empty:
+        st.sidebar.warning(f"⚠️ Aba de metas '{nome_aba_sheet}' não encontrada.")
+
+    # 4. PROCESSAR TOTAIS
+    if df_filtrado is not None and not df_filtrado.empty:
+        total_opd, total_amc = processar_vendas(df_filtrado)
+    else:
+        total_opd, total_amc = 0.0, 0.0
+
+    # 5. COMPARAR COM METAS
+    comparacao = {}
+    if planilha_metas is not None and not planilha_metas.empty and mes_selecionado:
+        comparacao = comparar_com_metas(
+            planilha_metas, mes_selecionado, total_opd, total_amc
         )
 
-        # 2. CARREGAR METAS (Usando a nova função conectada ao Sheets)
-        planilha_metas = None
+# 6. SINCRONIZAÇÃO DE VARIÁVEIS (Para manter compatibilidade com o restante do seu código)
+mes = mes_selecionado
+feriados_sess = feriados
+vendedor_selecionado_sess = vendedor_selecionado
 
-        # Define o nome da aba corretamente baseado na lógica que você já criou
-        # Se for "GERAL", certifique-se que o nome na planilha é "Meta - Geral" ou só "GERAL"
-        # Vou assumir que sua planilha tem abas com nomes como "PAOLA", "JEMINE", etc.
-        # E uma aba geral chamada "Meta - Geral" (ajuste o nome abaixo se necessário)
-
-        nome_aba_sheet = aba_meta_calculada
-        if aba_meta_calculada == "GERAL":
-            nome_aba_sheet = (
-                "Meta - Geral"  # Ajuste aqui se o nome da aba for diferente no Sheets
-            )
-
-        planilha_metas = carregar_planilha_metas_sheets(nome_aba_sheet)
-
-        if planilha_metas.empty:
-            st.sidebar.warning(
-                f"⚠️ Não foi possível ler as metas da aba '{nome_aba_sheet}'."
-            )
-
-        # 3. PROCESSAR TOTAIS
-        if df_filtrado is not None and not df_filtrado.empty:
-            total_opd, total_amc = processar_vendas(df_filtrado)
-        else:
-            total_opd, total_amc = 0.0, 0.0
-
-        # 4. COMPARAR COM METAS
-        comparacao = {}
-        if planilha_metas is not None and not planilha_metas.empty and mes_selecionado:
-            comparacao = comparar_com_metas(
-                planilha_metas, mes_selecionado, total_opd, total_amc
-            )
-            if not comparacao:
-                st.sidebar.warning("⚠️ Estrutura da aba de metas diferente do esperado.")
-
-        # SALVAR NO SESSION STATE
-        st.session_state["df_filtrado"] = df_filtrado
-        st.session_state["total_opd"] = total_opd
-        st.session_state["total_amc"] = total_amc
-        st.session_state["comparacao"] = comparacao
-        st.session_state["mes_selecionado"] = mes_selecionado
-        st.session_state["feriados"] = feriados
-        st.session_state["vendedor_selecionado"] = vendedor_selecionado
-        st.session_state["empresa_selecionada"] = (
-            empresa_selecionada  # <-- ADICIONE ESTA LINHA AQUI
-        )
-
-
-if "df_filtrado" not in st.session_state:
-    st.info("📂 Selecione os filtros na barra lateral e clique em 'Processar Dados'.")
+# 7. RENDERIZAÇÃO DA INTERFACE
+if df_filtrado is None or df_filtrado.empty:
+    st.info("📂 Selecione os filtros na barra lateral para visualizar os dados.")
 else:
-    df_filtrado = st.session_state["df_filtrado"]
-    total_opd = st.session_state["total_opd"]
-    total_amc = st.session_state["total_amc"]
-    comparacao = st.session_state["comparacao"]
-    mes = st.session_state["mes_selecionado"]
-    feriados_sess = st.session_state[
-        "feriados"
-    ]  # Renomeado para evitar conflito com a variável global
-    vendedor_selecionado_sess = st.session_state["vendedor_selecionado"]  # Renomeado
-
     if pagina_selecionada == "Painel de Vendas":
         tab1, tab2, tab3 = st.tabs(
             [
@@ -1615,14 +1588,12 @@ else:
                 "🔮 Previsão de Vendas (Em Teste)",
             ]
         )
+
         with tab1:
-            if df_filtrado is None or df_filtrado.empty:
+            # Re-verificação de segurança para o conteúdo da aba
+            if not comparacao and mes_selecionado:
                 st.warning(
-                    "Nenhum dado para exibir no Painel Principal com os filtros atuais."
-                )
-            elif not comparacao:
-                st.warning(
-                    "Metas não carregadas ou não encontradas para os filtros. O painel será exibido sem comparações."
+                    "Metas não encontradas para este filtro. Exibindo apenas totais."
                 )
                 col1, col2 = st.columns(2)
                 with col1:
@@ -1630,15 +1601,17 @@ else:
                 with col2:
                     st.metric("📊 Vendas Distribuição", f"R$ {total_amc:,.2f}")
             else:
+                # Cálculos de dias úteis que você já tinha
                 dias_uteis_passados = calcular_dias_uteis_passados(
                     mes, incluir_hoje=False, feriados=feriados_sess
                 )
                 dias_uteis_restantes = calcular_dias_uteis_restantes(
                     mes, incluir_hoje=True, feriados=feriados_sess
                 )
-                # Evita divisão por zero se não houver dias passados/restantes no mês (ex: primeiro/último dia)
                 dias_uteis_passados_calc = max(1, dias_uteis_passados)
                 dias_uteis_restantes_calc = max(1, dias_uteis_restantes)
+
+                # AQUI CONTINUA O SEU CÓDIGO ORIGINAL DOS CARDS (KPIs)...
 
                 def format_valor(valor):
                     return (
