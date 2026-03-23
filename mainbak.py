@@ -30,23 +30,45 @@ CORES = {
 st.markdown(
     """
 <style>
-/* Fundo geral */
+/* 1. Fundo Geral e Cabeçalho da Página */
 .stApp {
     background-color: #e5e5e5;
 }
 
-/* Sidebar */
+
+
+.block-container {
+    padding-top: 1rem !important;
+}
+
+/* 2. REMOVER ESPAÇO DA SIDEBAR (O segredo está aqui) */
+
+/* Esconde o cabeçalho da sidebar (onde fica o botão X) */
+[data-testid="stSidebarHeader"] {
+    display: flex !important;
+}
+
+/* Zera o padding do topo da sidebar */
+[data-testid="stSidebarContent"] {
+    padding-top: 3rem !important;
+}
+
+/* Garante que o conteúdo interno suba tudo */
+[data-testid="stSidebarUserContent"] {
+    padding-top: 0rem !important;
+    margin-top: -2.5rem !important; /* Ajuste esse valor se precisar subir mais */
+}
+
+/* 3. Estilos Visuais (Sidebar e Títulos) */
 section[data-testid="stSidebar"] {
     background-color: #ffffff;
     border-right: 1px solid #dddddd;
 }
 
-/* Títulos */
 h1, h2, h3, h4 {
     color: #240eb3;
 }
 
-/* Cards padrão */
 .card {
     background-color: #ffffff;
     border-radius: 12px;
@@ -80,7 +102,7 @@ def carregar_planilha_metas_sheets(nome_aba):
 
 # @st.cache_data(ttl=600)  # Cache de 10 minutos para não travar o app
 # @st.cache_data(ttl=60) # Para 1 minutoF:
-# @st.cache_data(ttl=1800) # Para 30 minutos:
+@st.cache_data(ttl=1800)  # Para 30 minutos:
 def carregar_dados_do_sheets():
     # Carrega Vendas
     df_vendas = conn.read(spreadsheet=URL_PLANILHA, worksheet="Vendas")
@@ -613,6 +635,7 @@ def filtrar_vendas(
     df_vendas_raw,
     mes_referencia=None,
     vendedor_selecionado=None,
+    empresa_selecionada=None,  # <-- NOVO PARÂMETRO AQUI
     data_inicial=None,
     data_final=None,
     com_cdp=False,
@@ -624,26 +647,31 @@ def filtrar_vendas(
     # Cria uma cópia para não alterar o original
     df_vendas = df_vendas_raw.copy()
 
-    # --- INÍCIO DO TRATAMENTO (Igual ao que você já tinha) ---
-    # Garantir que DAT_CAD seja datetime
+    # --- INÍCIO DO TRATAMENTO ---
     df_vendas["DAT_CAD"] = pd.to_datetime(
         df_vendas["DAT_CAD"], dayfirst=True, errors="coerce"
     )
 
-    # Remover espaços em branco das colunas de texto
-    cols_texto = ["VEN_NOME", "CLI_RAZ", "PED_OBS_INT", "PED_TIPO", "PED_STATUS"]
+    # Remover espaços em branco das colunas de texto (incluindo EMPRESA se existir)
+    cols_texto = [
+        "VEN_NOME",
+        "CLI_RAZ",
+        "PED_OBS_INT",
+        "PED_TIPO",
+        "PED_STATUS",
+        "EMPRESA",
+    ]
 
     for col in cols_texto:
         if col in df_vendas.columns:
             df_vendas[col] = (
                 df_vendas[col]
                 .astype(str)
-                .str.replace("\u00a0", " ", regex=False)  # remove NBSP
-                .str.strip()  # remove espaços
-                .str.upper()  # padroniza
+                .str.replace("\u00a0", " ", regex=False)
+                .str.strip()
+                .str.upper()
             )
 
-    # Converter PED_TOTAL para numérico
     df_vendas["PED_TOTAL"] = pd.to_numeric(
         df_vendas["PED_TOTAL"], errors="coerce"
     ).fillna(0)
@@ -652,7 +680,6 @@ def filtrar_vendas(
     df_vendas["DAT_CAD_DATE"] = df_vendas["DAT_CAD"].dt.date
 
     if data_inicial and data_final:
-        # Se os inputs forem datetime, pega só a data
         d_ini = (
             data_inicial
             if isinstance(data_inicial, datetime.date)
@@ -661,7 +688,6 @@ def filtrar_vendas(
         d_fim = (
             data_final if isinstance(data_final, datetime.date) else data_final.date()
         )
-
         df_vendas = df_vendas[
             (df_vendas["DAT_CAD_DATE"] >= d_ini) & (df_vendas["DAT_CAD_DATE"] <= d_fim)
         ]
@@ -669,6 +695,11 @@ def filtrar_vendas(
         df_vendas = df_vendas[df_vendas["DAT_CAD"].dt.month == mes_referencia]
         ano_atual = datetime.date.today().year
         df_vendas = df_vendas[df_vendas["DAT_CAD"].dt.year == ano_atual]
+
+    # --- FILTRO DE EMPRESA (NOVO) ---
+    if empresa_selecionada and empresa_selecionada != "Todas":
+        if "EMPRESA" in df_vendas.columns:
+            df_vendas = df_vendas[df_vendas["EMPRESA"] == empresa_selecionada.upper()]
 
     # --- FILTRO DE VENDEDOR ---
     if vendedor_selecionado and vendedor_selecionado != "Todos":
@@ -694,20 +725,42 @@ def processar_vendas(df_vendas_filtrado):
     if df_vendas_filtrado is None or df_vendas_filtrado.empty:
         return 0.0, 0.0
 
-    # Filtro base para OPD e faturado
-    filtro_opd = (df_vendas_filtrado["PED_OBS_INT"] == "OPD") & (
-        df_vendas_filtrado["PED_STATUS"] == "F"
+    df = df_vendas_filtrado.copy()
+
+    # Identifica se é cliente DIGITAL
+    cond_digital = df["CLI_RAZ"].str.contains("DIGITAL", na=False)
+
+    # --- Lógica para OPD ---
+    # Se não for DIGITAL: busca "OPD" em PED_OBS_INT
+    # Se for DIGITAL: busca "E-COMMERCE" em PED_OBS_INFO (ou PED_OBS_INT se preferir)
+    filtro_opd = (
+        (~cond_digital) & (df["PED_OBS_INT"] == "OPD") & (df["PED_STATUS"] == "F")
+    ) | (
+        (cond_digital) & (df["PED_OBS_INT"] == "E-COMMERCE") & (df["PED_STATUS"] == "F")
     )
-    total_opd = df_vendas_filtrado[filtro_opd]["PED_TOTAL"].sum()
+    total_opd = df[filtro_opd]["PED_TOTAL"].sum()
 
-    # Soma dos valores para AMC
-    # total_amc = df_vendas_filtrado[df_vendas_filtrado["PED_OBS_INT"].isin([ "DISTRIBICAO", "DISTRIBUICAO", "DISTRIBUIÇÃO", "LOJA"])]["PED_TOTAL"].sum()
+    # --- Lógica para DISTRIBUIÇÃO (AMC) ---
+    # Se não for DIGITAL: busca termos de distribuição em PED_OBS_INT
+    # Se for DIGITAL: busca "VENDA DIRETA" em PED_OBS_INFO
+    termos_dist = [
+        "DISTRIBICAO",
+        "DISTRIBUICAO",
+        "DISTRIBUIÇÃO",
+        "DIATRIBUICAO",
+        "LOJA",
+    ]
 
-    # Filtro para pedidos de distribuição com status F ou N
-    filtro_distribuicao = df_vendas_filtrado["PED_OBS_INT"].isin(
-        ["DISTRIBICAO", "DISTRIBUICAO", "DISTRIBUIÇÃO", "DIATRIBUICAO", "LOJA"]
-    ) & (df_vendas_filtrado["PED_STATUS"].isin(["F", "N"]))
-    total_amc = df_vendas_filtrado[filtro_distribuicao]["PED_TOTAL"].sum()
+    filtro_distribuicao = (
+        (~cond_digital)
+        & (df["PED_OBS_INT"].isin(termos_dist))
+        & (df["PED_STATUS"].isin(["F", "N"]))
+    ) | (
+        (cond_digital)
+        & (df["PED_OBS_INT"] == "VENDA DIRETA")
+        & (df["PED_STATUS"].isin(["F", "N"]))
+    )
+    total_amc = df[filtro_distribuicao]["PED_TOTAL"].sum()
 
     return float(total_opd), float(total_amc)
 
@@ -933,12 +986,43 @@ def gerar_tabela_diaria_empresa(df_vendas_filtrado):
 
     # CÓDIGO NOVO E CORRIGIDO
     # Condição para OPD: Observação é OPD E status é F
-    cond_opd = (df["PED_OBS_INT"] == "OPD") & (df["PED_STATUS"] == "F")
+    cond_digital = df["CLI_RAZ"].str.contains("DIGITAL", na=False)
 
-    # Condição para Distribuição: Observação é de distribuição E status é F ou N
-    cond_dist = df["PED_OBS_INT"].isin(
-        ["DISTRIBICAO", "DISTRIBUICAO", "DISTRIBUIÇÃO", "LOJA"]
-    ) & df["PED_STATUS"].isin(["F", "N"])
+    # -------------------
+    # OPD
+    # -------------------
+    cond_opd = (
+        # REGRA NORMAL
+        ((df["PED_OBS_INT"] == "OPD") & (df["PED_STATUS"] == "F") & ~cond_digital)
+        |
+        # REGRA DIGITAL
+        (
+            cond_digital
+            & df["PED_OBS_INT"].isin(["E-COMMERCE"])
+            & (df["PED_STATUS"] == "F")
+        )
+    )
+
+    # -------------------
+    # DISTRIBUIÇÃO
+    # -------------------
+    cond_dist = (
+        # REGRA NORMAL
+        (
+            df["PED_OBS_INT"].isin(
+                ["DISTRIBICAO", "DISTRIBUICAO", "DISTRIBUIÇÃO", "LOJA"]
+            )
+            & df["PED_STATUS"].isin(["F", "N"])
+            & ~cond_digital
+        )
+        |
+        # REGRA DIGITAL
+        (
+            cond_digital
+            & df["PED_OBS_INT"].isin(["VENDA DIRETA"])
+            & df["PED_STATUS"].isin(["F", "N"])
+        )
+    )
 
     # Aplicar as condições usando np.select para criar a coluna 'Tipo Venda'
     df["Tipo Venda"] = np.select(
@@ -989,12 +1073,43 @@ def gerar_tabela_geral(df_vendas_filtrado):
 
     # CÓDIGO NOVO E CORRIGIDO
     # Condição para OPD: Observação é OPD E status é F
-    cond_opd = (df["PED_OBS_INT"] == "OPD") & (df["PED_STATUS"] == "F")
+    cond_digital = df["CLI_RAZ"].str.contains("DIGITAL", na=False)
 
-    # Condição para Distribuição: Observação é de distribuição E status é F ou N
-    cond_dist = df["PED_OBS_INT"].isin(
-        ["DISTRIBICAO", "DISTRIBUICAO", "DISTRIBUIÇÃO", "LOJA"]
-    ) & df["PED_STATUS"].isin(["F", "N"])
+    # -------------------
+    # OPD
+    # -------------------
+    cond_opd = (
+        # REGRA NORMAL
+        ((df["PED_OBS_INT"] == "OPD") & (df["PED_STATUS"] == "F") & ~cond_digital)
+        |
+        # REGRA DIGITAL
+        (
+            cond_digital
+            & df["PED_OBS_INT"].isin(["E-COMMERCE"])
+            & (df["PED_STATUS"] == "F")
+        )
+    )
+
+    # -------------------
+    # DISTRIBUIÇÃO
+    # -------------------
+    cond_dist = (
+        # REGRA NORMAL
+        (
+            df["PED_OBS_INT"].isin(
+                ["DISTRIBICAO", "DISTRIBUICAO", "DISTRIBUIÇÃO", "LOJA"]
+            )
+            & df["PED_STATUS"].isin(["F", "N"])
+            & ~cond_digital
+        )
+        |
+        # REGRA DIGITAL
+        (
+            cond_digital
+            & df["PED_OBS_INT"].isin(["VENDA DIRETA"])
+            & df["PED_STATUS"].isin(["F", "N"])
+        )
+    )
 
     # Aplicar as condições usando np.select para criar a coluna 'Tipo Venda'
     df["Tipo Venda"] = np.select(
@@ -1039,12 +1154,43 @@ def gerar_tabela_vendedor(df_vendas_filtrado):
 
     # CÓDIGO NOVO E CORRIGIDO
     # Condição para OPD: Observação é OPD E status é F
-    cond_opd = (df["PED_OBS_INT"] == "OPD") & (df["PED_STATUS"] == "F")
+    cond_digital = df["CLI_RAZ"].str.contains("DIGITAL", na=False)
 
-    # Condição para Distribuição: Observação é de distribuição E status é F ou N
-    cond_dist = df["PED_OBS_INT"].isin(
-        ["DISTRIBICAO", "DISTRIBUICAO", "DISTRIBUIÇÃO", "LOJA"]
-    ) & df["PED_STATUS"].isin(["F", "N"])
+    # -------------------
+    # OPD
+    # -------------------
+    cond_opd = (
+        # REGRA NORMAL
+        ((df["PED_OBS_INT"] == "OPD") & (df["PED_STATUS"] == "F") & ~cond_digital)
+        |
+        # REGRA DIGITAL
+        (
+            cond_digital
+            & df["PED_OBS_INT"].isin(["E-COMMERCE"])
+            & (df["PED_STATUS"] == "F")
+        )
+    )
+
+    # -------------------
+    # DISTRIBUIÇÃO
+    # -------------------
+    cond_dist = (
+        # REGRA NORMAL
+        (
+            df["PED_OBS_INT"].isin(
+                ["DISTRIBICAO", "DISTRIBUICAO", "DISTRIBUIÇÃO", "LOJA"]
+            )
+            & df["PED_STATUS"].isin(["F", "N"])
+            & ~cond_digital
+        )
+        |
+        # REGRA DIGITAL
+        (
+            cond_digital
+            & df["PED_OBS_INT"].isin(["VENDA DIRETA"])
+            & df["PED_STATUS"].isin(["F", "N"])
+        )
+    )
 
     # Aplicar as condições usando np.select para criar a coluna 'Tipo Venda'
     df["Tipo Venda"] = np.select(
@@ -1095,12 +1241,43 @@ def gerar_dados_ranking(df_vendas_filtrado):
     df = df_vendas_filtrado.copy()
     # CÓDIGO NOVO E CORRIGIDO
     # Condição para OPD: Observação é OPD E status é F
-    cond_opd = (df["PED_OBS_INT"] == "OPD") & (df["PED_STATUS"] == "F")
+    cond_digital = df["CLI_RAZ"].str.contains("DIGITAL", na=False)
 
-    # Condição para Distribuição: Observação é de distribuição E status é F ou N
-    cond_dist = df["PED_OBS_INT"].isin(
-        ["DISTRIBICAO", "DISTRIBUICAO", "DISTRIBUIÇÃO", "LOJA"]
-    ) & df["PED_STATUS"].isin(["F", "N"])
+    # -------------------
+    # OPD
+    # -------------------
+    cond_opd = (
+        # REGRA NORMAL
+        ((df["PED_OBS_INT"] == "OPD") & (df["PED_STATUS"] == "F") & ~cond_digital)
+        |
+        # REGRA DIGITAL
+        (
+            cond_digital
+            & df["PED_OBS_INT"].isin(["E-COMMERCE"])
+            & (df["PED_STATUS"] == "F")
+        )
+    )
+
+    # -------------------
+    # DISTRIBUIÇÃO
+    # -------------------
+    cond_dist = (
+        # REGRA NORMAL
+        (
+            df["PED_OBS_INT"].isin(
+                ["DISTRIBICAO", "DISTRIBUICAO", "DISTRIBUIÇÃO", "LOJA"]
+            )
+            & df["PED_STATUS"].isin(["F", "N"])
+            & ~cond_digital
+        )
+        |
+        # REGRA DIGITAL
+        (
+            cond_digital
+            & df["PED_OBS_INT"].isin(["VENDA DIRETA"])
+            & df["PED_STATUS"].isin(["F", "N"])
+        )
+    )
 
     # Aplicar as condições usando np.select para criar a coluna 'Tipo Venda'
     df["Tipo Venda"] = np.select(
@@ -1141,119 +1318,199 @@ except Exception as e:
     st.stop()
 
 
-# --- INTERFACE STREAMLIT ---
-st.sidebar.title("📊 Navegação")
-pagina_selecionada = st.sidebar.radio(
-    "Escolha a visualização:",
-    ["Painel de Vendas", "Painel Financeiro"],  # <-- ADICIONE AQUI
-)
+# ================= SIDEBAR ORGANIZADA =================
+with st.sidebar:
 
+    # ===== HEADER =====
+    st.markdown("# 🦫 BI BEAVER")
+
+    # ===== NAVEGAÇÃO =====
+    st.subheader("📍 Navegação")
+    pagina_selecionada = st.radio(
+        "Escolha a visualização:",
+        ["Painel de Vendas", "Painel Financeiro"],
+    )
+
+    st.markdown(
+        "<hr style='margin:8px 0; border:0.5px solid rgba(0,0,0,0.1);'>",
+        unsafe_allow_html=True,
+    )
+
+    # ===== PERÍODO =====
+    st.subheader("📅 Período")
+
+    filtro_tipo = st.radio(
+        "Tipo de filtro:", ["Mês", "Período Personalizado"], horizontal=True
+    )
+
+    mes_selecionado = None
+    data_inicial, data_final = None, None
+
+    if filtro_tipo == "Mês":
+        mes_selecionado = st.selectbox(
+            "Mês de referência",
+            range(1, 13),
+            format_func=lambda x: [
+                "Janeiro",
+                "Fevereiro",
+                "Março",
+                "Abril",
+                "Maio",
+                "Junho",
+                "Julho",
+                "Agosto",
+                "Setembro",
+                "Outubro",
+                "Novembro",
+                "Dezembro",
+            ][x - 1],
+            index=datetime.date.today().month - 1,
+        )
+
+        ano_atual = datetime.date.today().year
+        data_inicial = datetime.date(ano_atual, mes_selecionado, 1)
+
+        if mes_selecionado == 12:
+            data_final = datetime.date(ano_atual, 12, 31)
+        else:
+            data_final = datetime.date(
+                ano_atual, mes_selecionado + 1, 1
+            ) - datetime.timedelta(days=1)
+
+        st.caption(
+            f"{data_inicial.strftime('%d/%m/%Y')} → {data_final.strftime('%d/%m/%Y')}"
+        )
+
+    else:
+        data_intervalo = st.date_input(
+            "Selecione o período",
+            value=[datetime.date.today().replace(day=1), datetime.date.today()],
+        )
+
+        if len(data_intervalo) == 2:
+            data_inicial, data_final = data_intervalo
+
+            if data_inicial > data_final:
+                st.error("⚠️ A data inicial não pode ser maior que a data final!")
+                st.stop()
+
+            mes_selecionado = data_final.month
+        else:
+            st.error("⚠️ Selecione uma data inicial e uma data final!")
+            st.stop()
+
+    st.markdown(
+        "<hr style='margin:8px 0; border:0.5px solid rgba(0,0,0,0.1);'>",
+        unsafe_allow_html=True,
+    )
+
+    # ===== EMPRESA =====
+    st.subheader("🏢 Filtros")
+
+    empresas_vendas = (
+        vendas_raw["EMPRESA"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .unique()
+        .tolist()
+        if vendas_raw is not None and "EMPRESA" in vendas_raw.columns
+        else []
+    )
+
+    empresas_receber = (
+        df_receber["EMPRESA"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .unique()
+        .tolist()
+        if df_receber is not None and "EMPRESA" in df_receber.columns
+        else []
+    )
+
+    empresas_pagar = (
+        df_pagar["EMPRESA"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .unique()
+        .tolist()
+        if df_pagar is not None and "EMPRESA" in df_pagar.columns
+        else []
+    )
+
+    todas_empresas = sorted(
+        [
+            emp
+            for emp in list(set(empresas_vendas + empresas_receber + empresas_pagar))
+            if emp != "NAN"
+        ]
+    )
+
+    empresa_selecionada = st.selectbox("Empresa", ["Todas"] + todas_empresas)
+
+    # ===== FILTROS AVANÇADOS =====
+    with st.expander("⚙️ Filtros Avançados"):
+
+        vendedor_selecionado = "Todos"
+
+        if pagina_selecionada != "Relatórios Financeiros":
+            if vendas_raw is not None and not vendas_raw.empty:
+
+                df_vendas_bruto = vendas_raw
+
+                if (
+                    empresa_selecionada != "Todas"
+                    and "EMPRESA" in df_vendas_bruto.columns
+                ):
+                    df_vendedores_empresa = df_vendas_bruto[
+                        df_vendas_bruto["EMPRESA"].astype(str).str.upper()
+                        == empresa_selecionada
+                    ]
+                else:
+                    df_vendedores_empresa = df_vendas_bruto
+
+                vendedores_unicos_stripped = sorted(
+                    list(
+                        df_vendedores_empresa["VEN_NOME"]
+                        .dropna()
+                        .astype(str)
+                        .str.strip()
+                        .unique()
+                    )
+                )
+
+                vendedores = ["Todos"] + vendedores_unicos_stripped
+
+                vendedor_selecionado = st.selectbox("Vendedor", vendedores)
+
+            else:
+                st.error("❌ Dados de vendas não carregados.")
+                st.stop()
+
+        com_cdp = st.checkbox("Incluir Casa do Pedreiro", value=True)
+
+# ================= TÍTULO =================
 st.title(f"📈 {pagina_selecionada}")
 
-# caminho_metas = "resources/META.xlsx"
-# caminho_vendas_padrao = "resources/VENDAS.xlsx"
-# uploaded_file = caminho_vendas_padrao
-# feriados = carregar_feriados()
-
+# ================= VARIÁVEIS =================
 feriados = feriados_list
 df_vendas_bruto = vendas_raw
 
-st.sidebar.header("Filtros")
-filtro_tipo = st.sidebar.radio("🔍 Tipo de filtro:", ["Mês", "Período Personalizado"])
-
-mes_selecionado = None
-data_inicial, data_final = None, None
-
-if filtro_tipo == "Mês":
-    mes_selecionado = st.sidebar.selectbox(
-        "📅 Mês de referência",
-        range(1, 13),
-        format_func=lambda x: [
-            "Janeiro",
-            "Fevereiro",
-            "Março",
-            "Abril",
-            "Maio",
-            "Junho",
-            "Julho",
-            "Agosto",
-            "Setembro",
-            "Outubro",
-            "Novembro",
-            "Dezembro",
-        ][x - 1],
-        index=datetime.date.today().month - 1,
-    )
-    ano_atual = datetime.date.today().year
-    data_inicial = datetime.date(ano_atual, mes_selecionado, 1)
-    if mes_selecionado == 12:
-        data_final = datetime.date(ano_atual, 12, 31)
-    else:
-        data_final = datetime.date(
-            ano_atual, mes_selecionado + 1, 1
-        ) - datetime.timedelta(days=1)
-    st.sidebar.info(
-        f"Período: {data_inicial.strftime('%d/%m/%Y')} a {data_final.strftime('%d/%m/%Y')}"
-    )
-else:  # Período Personalizado
-    data_intervalo = st.sidebar.date_input(
-        "📅 Selecione o período",
-        value=[datetime.date.today().replace(day=1), datetime.date.today()],
-    )
-    if len(data_intervalo) == 2:
-        data_inicial, data_final = data_intervalo
-        if data_inicial > data_final:
-            st.sidebar.error("⚠️ A data inicial não pode ser maior que a data final!")
-            st.stop()
-        mes_selecionado = data_final.month
-    else:
-        st.sidebar.error("⚠️ Selecione uma data inicial e uma data final!")
-        st.stop()
-
-vendedor_selecionado = "Todos"
-
-# --- LÓGICA CORRIGIDA PARA PEGAR VENDEDORES DO SHEETS ---
-if pagina_selecionada != "Relatórios Financeiros":
-    if vendas_raw is not None and not vendas_raw.empty:
-        # Usa o DataFrame do Sheets (vendas_raw)
-        df_vendas_bruto = vendas_raw
-
-        # Cria lista de vendedores
-        vendedores_unicos_stripped = sorted(
-            list(df_vendas_bruto["VEN_NOME"].dropna().astype(str).str.strip().unique())
-        )
-        vendedores = ["Todos"] + vendedores_unicos_stripped
-        vendedor_selecionado = st.sidebar.selectbox("👤 Vendedor", vendedores)
-    else:
-        st.error("❌ Dados de vendas não carregados do Google Sheets.")
-        st.stop()
-
-vendedor_selecionado_upper = vendedor_selecionado.upper()
-
-
-com_cdp = st.sidebar.checkbox("Incluir vendas da Casa do Pedreiro", value=True)
-
-# --- Seleção da Aba de Metas ---
-# As listas como rose_loja devem conter os nomes EXATOS e LIMPOS (e em MAIÚSCULAS para a comparação abaixo)
+# ================= LÓGICA DE METAS =================
 rose_loja = ["ROSESILVESTRE"]
 paola_loja = ["PAOLA"]
 jemine_loja = ["JEMINE OLIVEIRA"]
 danilima_d = ["DANILIMA"]
-renato_d = [
-    "JOSE RENATO MAULER"
-]  # Assumindo que este também é o formato esperado em MAIÚSCULAS
+renato_d = ["JOSE RENATO MAULER"]
 
-# 'vendedor_selecionado' já deve vir limpo do selectbox (sem espaços extras)
-# MODIFICAÇÃO APLICADA AQUI:
-vendedor_selecionado_upper = (
-    vendedor_selecionado.upper()
-)  # Converte para maiúsculas para comparação
+vendedor_selecionado_upper = vendedor_selecionado.upper()
 
-
-####################################################################################################
-if (
-    vendedor_selecionado == "Todos"
-):  # "Todos" é um valor especial, não precisa de .upper()
+if vendedor_selecionado == "Todos":
     aba_meta_calculada = "GERAL"
 
 elif vendedor_selecionado_upper in paola_loja:
@@ -1268,90 +1525,61 @@ elif vendedor_selecionado_upper in danilima_d:
 elif vendedor_selecionado_upper in renato_d:
     aba_meta_calculada = "RENATO"
 
-elif (
-    vendedor_selecionado_upper in rose_loja
-):  # Compara "NOMEEMMAIUSCULAS" com ["ROSESILVESTRE"]
+elif vendedor_selecionado_upper in rose_loja:
     aba_meta_calculada = "ROSE"
 
 else:
     aba_meta_calculada = "GERAL"
 
-# --- Fim da Seleção da Aba de Metas ---
-######################################################################################################
+# =================================================================
+# SUBSTITUA TODO O BLOCO DO BOTÃO E O IF "df_filtrado" POR ESTE:
+# =================================================================
 
+with st.spinner("🔄 Atualizando dados em tempo real..."):
+    # 1. FILTRAR VENDAS (Processamento automático)
+    df_filtrado = filtrar_vendas(
+        vendas_raw,
+        mes_referencia=mes_selecionado if filtro_tipo == "Mês" else None,
+        vendedor_selecionado=vendedor_selecionado,
+        empresa_selecionada=empresa_selecionada,
+        data_inicial=data_inicial,
+        data_final=data_final,
+        com_cdp=com_cdp,
+    )
 
-if st.sidebar.button("🔄 Processar Dados"):
-    with st.spinner("🔄 Processando dados do Google Sheets..."):
+    # 2. DEFINIR ABA DE METAS
+    nome_aba_sheet = aba_meta_calculada
+    if aba_meta_calculada == "GERAL":
+        nome_aba_sheet = "Meta - Geral"
 
-        # 1. FILTRAR VENDAS (Passamos vendas_raw, NÃO um caminho de arquivo)
-        df_filtrado = filtrar_vendas(
-            vendas_raw,  # <--- MUDANÇA IMPORTANTE: Passa o DF do Sheets
-            mes_referencia=mes_selecionado if filtro_tipo == "Mês" else None,
-            vendedor_selecionado=vendedor_selecionado,
-            data_inicial=data_inicial,
-            data_final=data_final,
-            com_cdp=com_cdp,
+    # 3. CARREGAR METAS (Cacheado para ser rápido)
+    planilha_metas = carregar_planilha_metas_sheets(nome_aba_sheet)
+
+    if planilha_metas.empty:
+        st.sidebar.warning(f"⚠️ Aba de metas '{nome_aba_sheet}' não encontrada.")
+
+    # 4. PROCESSAR TOTAIS
+    if df_filtrado is not None and not df_filtrado.empty:
+        total_opd, total_amc = processar_vendas(df_filtrado)
+    else:
+        total_opd, total_amc = 0.0, 0.0
+
+    # 5. COMPARAR COM METAS
+    comparacao = {}
+    if planilha_metas is not None and not planilha_metas.empty and mes_selecionado:
+        comparacao = comparar_com_metas(
+            planilha_metas, mes_selecionado, total_opd, total_amc
         )
 
-        # 2. CARREGAR METAS (Usando a nova função conectada ao Sheets)
-        planilha_metas = None
+# 6. SINCRONIZAÇÃO DE VARIÁVEIS (Para manter compatibilidade com o restante do seu código)
+mes = mes_selecionado
+feriados_sess = feriados
+vendedor_selecionado_sess = vendedor_selecionado
 
-        # Define o nome da aba corretamente baseado na lógica que você já criou
-        # Se for "GERAL", certifique-se que o nome na planilha é "Meta - Geral" ou só "GERAL"
-        # Vou assumir que sua planilha tem abas com nomes como "PAOLA", "JEMINE", etc.
-        # E uma aba geral chamada "Meta - Geral" (ajuste o nome abaixo se necessário)
-
-        nome_aba_sheet = aba_meta_calculada
-        if aba_meta_calculada == "GERAL":
-            nome_aba_sheet = (
-                "Meta - Geral"  # Ajuste aqui se o nome da aba for diferente no Sheets
-            )
-
-        planilha_metas = carregar_planilha_metas_sheets(nome_aba_sheet)
-
-        if planilha_metas.empty:
-            st.sidebar.warning(
-                f"⚠️ Não foi possível ler as metas da aba '{nome_aba_sheet}'."
-            )
-
-        # 3. PROCESSAR TOTAIS
-        if df_filtrado is not None and not df_filtrado.empty:
-            total_opd, total_amc = processar_vendas(df_filtrado)
-        else:
-            total_opd, total_amc = 0.0, 0.0
-
-        # 4. COMPARAR COM METAS
-        comparacao = {}
-        if planilha_metas is not None and not planilha_metas.empty and mes_selecionado:
-            comparacao = comparar_com_metas(
-                planilha_metas, mes_selecionado, total_opd, total_amc
-            )
-            if not comparacao:
-                st.sidebar.warning("⚠️ Estrutura da aba de metas diferente do esperado.")
-
-        # SALVAR NO SESSION STATE
-        st.session_state["df_filtrado"] = df_filtrado
-        st.session_state["total_opd"] = total_opd
-        st.session_state["total_amc"] = total_amc
-        st.session_state["comparacao"] = comparacao
-        st.session_state["mes_selecionado"] = mes_selecionado
-        st.session_state["feriados"] = feriados
-        st.session_state["vendedor_selecionado"] = vendedor_selecionado
-
-
-if "df_filtrado" not in st.session_state:
-    st.info("📂 Selecione os filtros na barra lateral e clique em 'Processar Dados'.")
+# 7. RENDERIZAÇÃO DA INTERFACE
+if df_filtrado is None or df_filtrado.empty:
+    st.info("📂 Selecione os filtros na barra lateral para visualizar os dados.")
 else:
-    df_filtrado = st.session_state["df_filtrado"]
-    total_opd = st.session_state["total_opd"]
-    total_amc = st.session_state["total_amc"]
-    comparacao = st.session_state["comparacao"]
-    mes = st.session_state["mes_selecionado"]
-    feriados_sess = st.session_state[
-        "feriados"
-    ]  # Renomeado para evitar conflito com a variável global
-    vendedor_selecionado_sess = st.session_state["vendedor_selecionado"]  # Renomeado
-
     if pagina_selecionada == "Painel de Vendas":
         tab1, tab2, tab3 = st.tabs(
             [
@@ -1360,30 +1588,30 @@ else:
                 "🔮 Previsão de Vendas (Em Teste)",
             ]
         )
+
         with tab1:
-            if df_filtrado is None or df_filtrado.empty:
+            # Re-verificação de segurança para o conteúdo da aba
+            if not comparacao and mes_selecionado:
                 st.warning(
-                    "Nenhum dado para exibir no Painel Principal com os filtros atuais."
-                )
-            elif not comparacao:
-                st.warning(
-                    "Metas não carregadas ou não encontradas para os filtros. O painel será exibido sem comparações."
+                    "Metas não encontradas para este filtro. Exibindo apenas totais."
                 )
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("📈 Vendas Direta", f"R$ {total_opd:,.2f}")
+                    st.metric("📈 Vendas OPD", f"R$ {total_opd:,.2f}")
                 with col2:
-                    st.metric("📊 Vendas E-Commerce", f"R$ {total_amc:,.2f}")
+                    st.metric("📊 Vendas Distribuição", f"R$ {total_amc:,.2f}")
             else:
+                # Cálculos de dias úteis que você já tinha
                 dias_uteis_passados = calcular_dias_uteis_passados(
                     mes, incluir_hoje=False, feriados=feriados_sess
                 )
                 dias_uteis_restantes = calcular_dias_uteis_restantes(
                     mes, incluir_hoje=True, feriados=feriados_sess
                 )
-                # Evita divisão por zero se não houver dias passados/restantes no mês (ex: primeiro/último dia)
                 dias_uteis_passados_calc = max(1, dias_uteis_passados)
                 dias_uteis_restantes_calc = max(1, dias_uteis_restantes)
+
+                # AQUI CONTINUA O SEU CÓDIGO ORIGINAL DOS CARDS (KPIs)...
 
                 def format_valor(valor):
                     return (
@@ -1460,7 +1688,7 @@ else:
                 col1_chart, col2_chart = st.columns(2)
                 with col1_chart:
                     st.markdown(
-                        f"<div style='background-color:#240eb3; padding:10px; border-radius:10px; text-align:center;'><h4 style='color:#ffff;'>📈 Vendas Direta: R$ {total_opd:,.2f}</h4></div>",
+                        f"<div style='background-color:#240eb3; padding:10px; border-radius:10px; text-align:center;'><h4 style='color:#ffff;'>📈 Vendas OPD: R$ {total_opd:,.2f}</h4></div>",
                         unsafe_allow_html=True,
                     )
                     if "OPD" in comparacao and comparacao["OPD"]:
@@ -1472,7 +1700,7 @@ else:
                         st.info("Dados de OPD não disponíveis para o gráfico.")
                 with col2_chart:
                     st.markdown(
-                        f"<div style='background-color:#240eb3; padding:10px; border-radius:10px; text-align:center;'><h4 style='color:#ffff;'>📊 Vendas E-Commerce: R$ {total_amc:,.2f}</h4></div>",
+                        f"<div style='background-color:#240eb3; padding:10px; border-radius:10px; text-align:center;'><h4 style='color:#ffff;'>📊 Vendas Distribuição: R$ {total_amc:,.2f}</h4></div>",
                         unsafe_allow_html=True,
                     )
                     if "AMC" in comparacao and comparacao["AMC"]:
@@ -1975,6 +2203,24 @@ else:
                 df_pagar_filtrado = df_pagar_filtrado[
                     df_pagar_filtrado["Fornecedor"] == entidade_escolhida
                 ]
+
+            # --- NOVO: FILTRO DE EMPRESA NO FINANCEIRO ---
+            if empresa_selecionada != "Todas":
+                if "EMPRESA" in df_receber_filtrado.columns:
+                    # Padroniza para maiúsculo antes de comparar para evitar erros de digitação na planilha
+                    df_receber_filtrado = df_receber_filtrado[
+                        df_receber_filtrado["EMPRESA"]
+                        .astype(str)
+                        .str.strip()
+                        .str.upper()
+                        == empresa_selecionada
+                    ]
+
+                if "EMPRESA" in df_pagar_filtrado.columns:
+                    df_pagar_filtrado = df_pagar_filtrado[
+                        df_pagar_filtrado["EMPRESA"].astype(str).str.strip().str.upper()
+                        == empresa_selecionada
+                    ]
 
             # --- ABAS PARA VISUALIZAÇÃO ---
             tab1, tab2, tab3, tab4 = st.tabs(
