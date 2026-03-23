@@ -100,9 +100,133 @@ def carregar_planilha_metas_sheets(nome_aba):
         return pd.DataFrame()
 
 
+def carregar_dados_logistica():
+    """
+    Busca dados reais das abas 'Estoque' e 'Frete' do Google Sheets.
+    Calcula automaticamente os dias sem venda com base na data da última saída.
+    """
+    try:
+        # 1. Conectar ao Google Sheets (usa a conexão já configurada no seu main.py)
+        conn = st.connection("gsheets", type=GSheetsConnection)
+
+        # 2. Ler a aba de ESTOQUE
+        # Substitua 'URL_DA_SUA_PLANILHA' pela URL real ou deixe vazio se estiver no .streamlit/secrets.toml
+        df_estoque = conn.read(worksheet="Estoque")
+
+        # 3. Ler a aba de FRETE
+        df_frete = conn.read(worksheet="Frete")
+
+        # --- PROCESSAMENTO DOS DADOS DE ESTOQUE ---
+
+        # Garantir que a coluna de data seja lida corretamente
+        df_estoque["Ultima_Venda"] = pd.to_datetime(
+            df_estoque["Ultima_Venda"], dayfirst=True
+        )
+
+        # Calcular os Dias Sem Venda (Hoje - Data da Ultima Venda)
+        hoje = pd.to_datetime(datetime.date.today())
+        df_estoque["Dias_Sem_Venda"] = (hoje - df_estoque["Ultima_Venda"]).dt.days
+
+        # Garantir que valores numéricos não tenham erros (converter para float)
+        colunas_numericas = ["Quantidade", "Preco_Custo", "Preco_Venda"]
+        for col in colunas_numericas:
+            df_estoque[col] = pd.to_numeric(df_estoque[col], errors="coerce").fillna(0)
+
+        # --- PROCESSAMENTO DOS DADOS DE FRETE ---
+
+        colunas_frete = ["Gasto_Total", "Vendas_Geradas"]
+        for col in colunas_frete:
+            df_frete[col] = pd.to_numeric(df_frete[col], errors="coerce").fillna(0)
+
+        return df_estoque, df_frete
+
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar dados da planilha: {e}")
+        # Retorna DataFrames vazios com as colunas necessárias para o código não quebrar
+        df_vazio = pd.DataFrame(
+            columns=[
+                "Produto",
+                "Marca",
+                "Tipo",
+                "Quantidade",
+                "Preco_Custo",
+                "Preco_Venda",
+                "Dias_Sem_Venda",
+            ]
+        )
+        df_frete_vazio = pd.DataFrame(
+            columns=["Transporte", "Gasto_Total", "Vendas_Geradas"]
+        )
+        return df_vazio, df_frete_vazio
+
+
+# def carregar_dados_logistica():
+#     dados_estoque = {
+#         "Produto": [
+#             "Cabo Flex 10mm",
+#             "Disjuntor 20A",
+#             "Piso Porcelanato",
+#             "Tinta Acrílica",
+#             "Tubo PVC 100mm",
+#             "Torneira Inox",
+#             "Lâmpada LED",
+#             "Cimento 50kg",
+#         ],
+#         "Marca": [
+#             "Sil",
+#             "Schneider",
+#             "Portobello",
+#             "Suvinil",
+#             "Tigre",
+#             "Deca",
+#             "Philips",
+#             "Votoran",
+#         ],
+#         "Tipo": [
+#             "Elétrica",
+#             "Elétrica",
+#             "Acabamento",
+#             "Pintura",
+#             "Hidráulica",
+#             "Hidráulica",
+#             "Elétrica",
+#             "Básico",
+#         ],
+#         "Quantidade": [120, 45, 300, 25, 90, 15, 200, 500],
+#         "Qtd_Minima": [50, 20, 100, 30, 40, 10, 50, 100],
+#         "Preco_Custo": [18.50, 42.00, 55.00, 210.00, 28.00, 120.00, 12.00, 35.00],
+#         "Preco_Venda": [32.00, 89.00, 98.00, 340.00, 52.00, 245.00, 28.00, 48.00],
+#     }
+#     df = pd.DataFrame(dados_estoque)
+#     df["Total_Custo"] = df["Quantidade"] * df["Preco_Custo"]
+#     df["Total_Venda"] = df["Quantidade"] * df["Preco_Venda"]
+#     # Markup simples em porcentagem
+#     df["Markup_%"] = ((df["Preco_Venda"] - df["Preco_Custo"]) / df["Preco_Custo"]) * 100
+
+#     # Dados de Frete simplificados
+#     dados_frete = {
+#         "Transporte": ["Transportadora", "Freteiro", "Caminhão Próprio"],
+#         "Gasto_Total": [4500, 2800, 1500],  # Gasolina + Frete pago
+#         "Vendas_Geradas": [55000, 32000, 28000],
+#     }
+#     df_f = pd.DataFrame(dados_frete)
+
+#     # ================= NOVO =================
+#     df["Ultima_Venda"] = [
+#         datetime.date.today() - datetime.timedelta(days=x)
+#         for x in [2, 10, 45, 5, 20, 60, 1, 90]
+#     ]
+
+#     df["Dias_Sem_Venda"] = (
+#         pd.to_datetime(datetime.date.today()) - pd.to_datetime(df["Ultima_Venda"])
+#     ).dt.days
+
+#     return df, df_f
+
+
 # @st.cache_data(ttl=600)  # Cache de 10 minutos para não travar o app
 # @st.cache_data(ttl=60) # Para 1 minutoF:
-@st.cache_data(ttl=1800)  # Para 30 minutos:
+# @st.cache_data(ttl=1800)  # Para 30 minutos:
 def carregar_dados_do_sheets():
     # Carrega Vendas
     df_vendas = conn.read(spreadsheet=URL_PLANILHA, worksheet="Vendas")
@@ -1328,7 +1452,7 @@ with st.sidebar:
     st.subheader("📍 Navegação")
     pagina_selecionada = st.radio(
         "Escolha a visualização:",
-        ["Painel de Vendas", "Painel Financeiro"],
+        ["Painel de Vendas", "Painel Financeiro", "Painel Logístico"],
     )
 
     st.markdown(
@@ -2806,3 +2930,385 @@ else:
                     st.warning(
                         "Não há dados suficientes no período selecionado para gerar esta análise."
                     )
+
+    elif pagina_selecionada == "Painel Logístico":
+
+        df, df_frete = carregar_dados_logistica()
+
+        if df.empty:
+            st.warning("Nenhum dado logístico encontrado.")
+        else:
+            # ================= BASE DE CÁLCULOS =================
+            df["Valor_Custo"] = df["Quantidade"] * df["Preco_Custo"]
+            df["Valor_Venda"] = df["Quantidade"] * df["Preco_Venda"]
+
+            # Margem: Quanto do preço de venda é lucro bruto
+            df["Margem_%"] = (
+                (df["Preco_Venda"] - df["Preco_Custo"]) / df["Preco_Venda"]
+            ) * 100
+
+            # Indica quanto você somou em cima do custo para chegar no preço
+            df["Markup_%"] = (
+                (df["Preco_Venda"] - df["Preco_Custo"]) / df["Preco_Custo"]
+            ) * 100
+
+            # Giro: Representa a velocidade de saída (inverso dos dias parado)
+            df["Giro"] = 1 / (df["Dias_Sem_Venda"] + 1)
+
+            # ================= FILTROS =================
+            st.markdown("### 🔎 Filtros")
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                produto_sel = st.selectbox(
+                    "Produto", ["Todos"] + sorted(df["Produto"].unique())
+                )
+            with col2:
+                tipo_sel = st.selectbox(
+                    "Categoria", ["Todas"] + sorted(df["Tipo"].unique())
+                )
+            with col3:
+                marca_sel = st.selectbox(
+                    "Marca", ["Todas"] + sorted(df["Marca"].unique())
+                )
+
+            busca = st.text_input("🔍 Buscar por nome do produto")
+
+            df_filtrado = df.copy()
+            if produto_sel != "Todos":
+                df_filtrado = df_filtrado[df_filtrado["Produto"] == produto_sel]
+            if tipo_sel != "Todas":
+                df_filtrado = df_filtrado[df_filtrado["Tipo"] == tipo_sel]
+            if marca_sel != "Todas":
+                df_filtrado = df_filtrado[df_filtrado["Marca"] == marca_sel]
+            if busca:
+                df_filtrado = df_filtrado[
+                    df_filtrado["Produto"].str.contains(busca, case=False, na=False)
+                ]
+
+            # ================= TABS =================
+            tab1, tab2, tab3 = st.tabs(
+                ["📊 Visão Geral", "🧠 Inteligência Comercial", "🚛 Operação e Frete"]
+            )
+
+            # =========================================================
+            # 📊 ABA 1 - VISÃO GERAL
+            # =========================================================
+            with tab1:
+                custo_total = df_filtrado["Valor_Custo"].sum()
+                venda_total = df_filtrado["Valor_Venda"].sum()
+                estoque_qtd = df_filtrado["Quantidade"].sum()
+
+                m1, m2, m3 = st.columns(3)
+                m1.metric("💰 Capital Imobilizado (Custo)", f"R$ {custo_total:,.2f}")
+                m2.metric("🏷️ Potencial de Faturamento", f"R$ {venda_total:,.2f}")
+                m3.metric("📦 Itens em Estoque", f"{estoque_qtd:,.0f} un")
+
+                st.markdown("---")
+
+                col_g1, col_g2 = st.columns(2)
+                with col_g1:
+                    fig_resumo = px.bar(
+                        x=["Custo", "Venda"],
+                        y=[custo_total, venda_total],
+                        title="Comparativo: Custo vs Venda",
+                        color=["Custo", "Venda"],
+                        color_discrete_sequence=["#FF4B4B", "#00CC96"],
+                    )
+                    st.plotly_chart(fig_resumo, use_container_width=True)
+
+                with col_g2:
+                    df_categ = (
+                        df_filtrado.groupby("Tipo")["Valor_Venda"].sum().reset_index()
+                    )
+                    fig_pie = px.pie(
+                        df_categ,
+                        names="Tipo",
+                        values="Valor_Venda",
+                        hole=0.4,
+                        title="Participação por Categoria",
+                    )
+                    st.plotly_chart(fig_pie, use_container_width=True)
+
+            # =========================================================
+            # 🧠 ABA 2 - INTELIGÊNCIA COMERCIAL
+            # =========================================================
+            with tab2:
+                # --- CURVA ABC ---
+                st.markdown("### 🏆 Classificação de Importância (Curva ABC)")
+
+                # ... (o cálculo da Curva ABC continua o mesmo) ...
+                df_abc = (
+                    df_filtrado.groupby("Produto")["Valor_Venda"].sum().reset_index()
+                )
+                df_abc = df_abc.sort_values("Valor_Venda", ascending=False)
+                df_abc["Acumulado"] = df_abc["Valor_Venda"].cumsum()
+                total = df_abc["Valor_Venda"].sum()
+                df_abc["%_Acumulado"] = df_abc["Acumulado"] / total
+                df_abc["Curva_ABC"] = df_abc["%_Acumulado"].apply(
+                    lambda x: (
+                        "Classe A"
+                        if x <= 0.8
+                        else ("Classe B" if x <= 0.95 else "Classe C")
+                    )
+                )
+
+                col_abc1, col_abc2 = st.columns([1, 1.5])
+                with col_abc1:
+                    fig_abc_donut = px.pie(
+                        df_abc,
+                        names="Curva_ABC",
+                        values="Valor_Venda",
+                        hole=0.5,
+                        title="Distribuição do Faturamento",
+                        color="Curva_ABC",
+                        color_discrete_map={
+                            "Classe A": "#00CC96",
+                            "Classe B": "#FFA15A",
+                            "Classe C": "#EF553B",
+                        },
+                    )
+                    st.plotly_chart(fig_abc_donut, use_container_width=True)
+
+                with col_abc2:
+                    st.markdown("**Listagem por Classe**")
+                    a_tab, b_tab, c_tab = st.tabs(["Classe A", "Classe B", "Classe C"])
+                    with a_tab:
+                        df_a = df_abc[df_abc["Curva_ABC"] == "Classe A"][
+                            ["Produto", "Valor_Venda"]
+                        ].copy()
+
+                        df_a["Valor_Venda"] = df_a["Valor_Venda"].map(
+                            lambda x: f"R$ {x:,.2f}".replace(",", "X")
+                            .replace(".", ",")
+                            .replace("X", ".")
+                        )
+
+                        st.dataframe(
+                            df_a,
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                    with b_tab:
+                        df_b = df_abc[df_abc["Curva_ABC"] == "Classe B"][
+                            ["Produto", "Valor_Venda"]
+                        ].copy()
+                        df_b["Valor_Venda"] = df_b["Valor_Venda"].map(
+                            lambda x: f"R$ {x:,.2f}".replace(",", "X")
+                            .replace(".", ",")
+                            .replace("X", ".")
+                        )
+
+                        st.dataframe(df_b, use_container_width=True, hide_index=True)
+                    with c_tab:
+                        df_c = df_abc[df_abc["Curva_ABC"] == "Classe C"][
+                            ["Produto", "Valor_Venda"]
+                        ].copy()
+                        df_c["Valor_Venda"] = df_c["Valor_Venda"].map(
+                            lambda x: f"R$ {x:,.2f}".replace(",", "X")
+                            .replace(".", ",")
+                            .replace("X", ".")
+                        )
+
+                        st.dataframe(df_c, use_container_width=True, hide_index=True)
+
+                st.markdown("---")
+
+            # --- DESEMPENHO: MARGEM vs GIRO vs MARKUP ---
+            st.markdown("### 📈 Desempenho: Margem, Giro e Markup")
+
+            from plotly.subplots import make_subplots
+            import plotly.graph_objects as go
+            import pandas as pd
+
+            # Slider
+            qtd_produtos = st.slider(
+                "Quantos produtos visualizar no ranking?", 5, 50, 10
+            )
+
+            # Top produtos
+            df_performance = df_filtrado.nlargest(qtd_produtos, "Valor_Venda")
+
+            # 🔵 Garantir formato de data
+            df_filtrado["Ultima_Venda"] = pd.to_datetime(df_filtrado["Ultima_Venda"])
+
+            # 🔴 Giro Real (últimos 30 dias)
+            data_limite = df_filtrado["Ultima_Venda"].max() - pd.Timedelta(days=30)
+
+            df_ultimos_30 = df_filtrado[df_filtrado["Ultima_Venda"] >= data_limite]
+
+            giro_real = (
+                df_ultimos_30.groupby("Produto")["Quantidade"]
+                .sum()
+                .reset_index()
+                .rename(columns={"Quantidade": "Giro_Real"})
+            )
+
+            # juntar no dataframe principal
+            df_performance = df_performance.merge(giro_real, on="Produto", how="left")
+
+            # preencher nulos
+            df_performance["Giro_Real"] = df_performance["Giro_Real"].fillna(0)
+
+            # 🔥 NORMALIZAR Giro Real (0 a 1)
+            if df_performance["Giro_Real"].max() > 0:
+                df_performance["Giro_Real"] = (
+                    df_performance["Giro_Real"] / df_performance["Giro_Real"].max()
+                )
+
+            # 🔧 Arredondar Giro
+            df_performance["Giro"] = df_performance["Giro"].round(2)
+
+            # Criar gráfico
+            fig_performance = make_subplots(specs=[[{"secondary_y": True}]])
+
+            # 🔵 Margem
+            fig_performance.add_trace(
+                go.Bar(
+                    x=df_performance["Produto"],
+                    y=df_performance["Margem_%"],
+                    name="Margem (%)",
+                    marker_color="#636EFA",
+                ),
+                secondary_y=False,
+            )
+
+            # 🟢 Markup
+            fig_performance.add_trace(
+                go.Bar(
+                    x=df_performance["Produto"],
+                    y=df_performance["Markup_%"],
+                    name="Markup (%)",
+                    marker_color="#00CC96",
+                ),
+                secondary_y=False,
+            )
+
+            # 🟡 Giro (recência)
+            fig_performance.add_trace(
+                go.Scatter(
+                    x=df_performance["Produto"],
+                    y=df_performance["Giro"],
+                    name="Giro (Recência)",
+                    mode="lines+markers",
+                    line=dict(color="#FECB52", width=3),
+                    marker=dict(size=8),
+                    hovertemplate="Giro: %{y:.2f}<extra></extra>",
+                ),
+                secondary_y=True,
+            )
+
+            # 🔴 Giro Real (normalizado)
+            fig_performance.add_trace(
+                go.Scatter(
+                    x=df_performance["Produto"],
+                    y=df_performance["Giro_Real"],
+                    name="Giro Real (30d)",
+                    mode="lines+markers",
+                    line=dict(color="#EF553B", width=3, dash="dash"),
+                    marker=dict(size=8),
+                    hovertemplate="Giro Real: %{y:.2f}<extra></extra>",
+                ),
+                secondary_y=True,
+            )
+
+            # Layout
+            fig_performance.update_layout(
+                title=f"Top {qtd_produtos} Produtos: Comparativo de Indicadores",
+                xaxis_tickangle=-45,
+                legend=dict(orientation="h", y=1.1),
+            )
+
+            # Eixos
+            fig_performance.update_yaxes(title_text="Percentual (%)", secondary_y=False)
+
+            fig_performance.update_yaxes(
+                title_text="Giro (0 a 1)", tickformat=".2f", secondary_y=True
+            )
+
+            # Exibir
+            st.plotly_chart(fig_performance, use_container_width=True)
+
+            # Info
+            st.info(
+                """
+            💡 **Como entender este gráfico:**
+            - **Margem (%)**: Lucro após custo
+            - **Markup (%)**: Acréscimo sobre o custo
+            - **Linha amarela**: Giro (recência da venda)
+            - **Linha vermelha**: Giro Real (volume relativo dos últimos 30 dias)
+
+            📊 Interpretação:
+            - Alto giro + alto giro real → produto campeão
+            - Alto giro + baixo giro real → vendeu recente, mas pouco
+            - Baixo giro + alto giro real → já vendeu bem, mas esfriou
+            - Baixo giro + baixo giro real → produto parado
+            """
+            )
+            # =========================================================
+            # 🚛 ABA 3 - OPERAÇÃO E FRETE
+            # =========================================================
+            with tab3:
+                col_op1, col_op2 = st.columns(2)
+
+                with col_op1:
+                    # --- IDADE DO ESTOQUE (MELHORADO) ---
+                    st.markdown("### ⚠️ Alerta de Estoque Parado")
+                    # Ordena pelos produtos que estão há mais tempo sem vender
+                    df_parado = df_filtrado.nlargest(10, "Dias_Sem_Venda")
+                    fig_parado = px.bar(
+                        df_parado,
+                        x="Dias_Sem_Venda",
+                        y="Produto",
+                        orientation="h",
+                        title="Top 10 Produtos Há Mais Tempo Parados",
+                        color="Dias_Sem_Venda",
+                        color_continuous_scale="Reds",
+                    )
+                    st.plotly_chart(fig_parado, use_container_width=True)
+
+                with col_op2:
+                    # --- GASTO TOTAL FRETE ---
+                    st.markdown("### 💸 Custos de Transporte")
+
+                    fig_gasto_frete = px.bar(
+                        df_frete,
+                        x="Transporte",
+                        y="Gasto_Total",
+                        title="Gasto Total por Transportadora",
+                        text="Gasto_Total",
+                    )
+
+                    # 💰 Formatar texto das barras (R$ brasileiro)
+                    fig_gasto_frete.update_traces(
+                        texttemplate="R$ %{y:,.2f}", textposition="outside"
+                    )
+
+                    # 💰 Formatar eixo Y
+                    fig_gasto_frete.update_layout(
+                        yaxis_tickprefix="R$ ",
+                    )
+
+                    st.plotly_chart(fig_gasto_frete, use_container_width=True)
+
+                st.markdown("---")
+
+                # --- PERCENTUAL DE FRETE SOBRE VENDA ---
+                st.markdown("### 📊 Eficiência Logística")
+                df_frete["Custo_%"] = (
+                    df_frete["Gasto_Total"] / df_frete["Vendas_Geradas"]
+                ) * 100
+
+                fig_eficiencia = px.bar(
+                    df_frete,
+                    x="Transporte",
+                    y="Custo_%",
+                    title="Quanto do faturamento o frete 'consome' (%)",
+                    text_auto=".1f",
+                    color="Custo_%",
+                    color_continuous_scale="Viridis",
+                )
+                st.plotly_chart(fig_eficiencia, use_container_width=True)
+                st.caption(
+                    "Este gráfico mostra o impacto real do frete no seu preço final. Quanto menor a barra, mais eficiente é a operação."
+                )
